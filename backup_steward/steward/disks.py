@@ -137,6 +137,45 @@ class Host:
 class Disks:
     def __init__(self, cfg, host):
         self.cfg, self.host = cfg, host
+        self.journal_root = None
+
+    async def journal_cursor(self, root):
+        # The container has its own machine ID. Implicit journal discovery can
+        # report "No journal files" despite the host journal being mounted.
+        mark = await command(
+            "journalctl",
+            "--directory=" + root,
+            "-k",
+            "-n",
+            "1",
+            "--show-cursor",
+            "--no-pager",
+            "-o",
+            "cat",
+        )
+        cursor = next(
+            (
+                line.removeprefix("-- cursor: ").strip()
+                for line in mark.splitlines()
+                if line.startswith("-- cursor: ")
+            ),
+            None,
+        )
+        if not cursor:
+            raise RuntimeError("Cannot read a kernel cursor from the host journal")
+        return cursor
+
+    async def validate_journal(self):
+        # Both are official read-only Supervisor journal mappings. Pin one
+        # readable directory for the entire operation, including the final proof.
+        for root in ("/var/log/journal", "/run/log/journal"):
+            try:
+                await self.journal_cursor(root)
+            except RuntimeError:
+                continue
+            self.journal_root = root
+            return
+        raise RuntimeError("Host kernel journal is unavailable; disk operations are blocked")
 
     async def validate(self, mount, uuid):
         path = Path(mount)
@@ -206,6 +245,8 @@ class Disks:
         raise RuntimeError("Host mount is not visible correctly inside the app")
 
     async def safe_remove(self):
+        if self.journal_root is None:
+            await self.validate_journal()
         if await self.mounted_on_host():
             device = await self.validate_destination()
         else:
@@ -253,17 +294,7 @@ class Disks:
         finally:
             os.close(fd)
         # Read-only host journal mapping provides the same kernel confirmation as the old helper.
-        mark = await command("journalctl", "-k", "-n", "1", "--show-cursor", "--no-pager", "-o", "cat")
-        cursor = next(
-            (
-                line.removeprefix("-- cursor: ")
-                for line in mark.splitlines()
-                if line.startswith("-- cursor: ")
-            ),
-            None,
-        )
-        if not cursor:
-            raise RuntimeError("Cannot mark kernel journal; leave power on")
+        cursor = await self.journal_cursor(self.journal_root)
         removal = Path("/sys/class/block") / parent / "device/delete"
         removal.write_text("1\n", encoding="ascii")
         await asyncio.sleep(5)
@@ -271,7 +302,15 @@ class Disks:
             raise RuntimeError("Disk did not leave the kernel; leave power on")
         # Journald can lag after the device disappears; allow a bounded wait.
         for _ in range(15):
-            events = await command("journalctl", "-k", "--after-cursor=" + cursor, "--no-pager", "-o", "cat")
+            events = await command(
+                "journalctl",
+                "--directory=" + self.journal_root,
+                "-k",
+                "--after-cursor=" + cursor,
+                "--no-pager",
+                "-o",
+                "cat",
+            )
             relevant = [line for line in events.splitlines() if f"[{parent}]" in line]
             if any("Synchronize Cache(" in line and "failed" in line for line in relevant):
                 raise RuntimeError("Kernel reported failed SCSI cache flush; leave power on")

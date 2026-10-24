@@ -19,7 +19,7 @@ from homeassistant.helpers import area_registry, device_registry, entity_registr
 async def main():
     requests = []
     data = {
-        "version": "0.1.0",
+        "version": "0.1.1",
         "busy": False,
         "mode": "test",
         "schedule_enabled": False,
@@ -66,6 +66,8 @@ async def main():
                     "backup_steward", context={"source": SOURCE_USER}
                 )
                 assert result["type"] == "form", result
+                integration = await loader.async_get_integration(hass, "backup_steward")
+                assert integration.has_branding, "Local integration brand directory was not detected"
                 from custom_components.backup_steward.api import Client
                 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 

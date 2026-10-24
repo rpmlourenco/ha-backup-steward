@@ -29,6 +29,8 @@ The app talks to `org.freedesktop.systemd1` over the host system bus. It creates
 
 The app reads the host journal to require the same final SCSI flush evidence as the existing helper. Only a dedicated ext4 destination disk with one partition is supported for physical removal. Source automount is still the existing udev rule. No source mounting operation exists.
 
+Journal discovery explicitly selects `/var/log/journal` or `/run/log/journal`, rather than the container's machine ID. A readable kernel cursor is required before power-on, and the selected directory stays fixed for the removal cursor and subsequent kernel-event checks. Empty or unreadable mappings block disk operations.
+
 **HAOS hardware acceptance is a release gate:** D-Bus policy, media mount propagation, block-device visibility and journal visibility must all be proven on the actual host before enabling production. A successful Docker build cannot prove these properties.
 
 ## Execution invariants

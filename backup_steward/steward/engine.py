@@ -65,6 +65,7 @@ class Engine:
                 await self.api.preflight(cfg)
                 await host.acquire()
                 await disks.validate_source()
+                await disks.validate_journal()
                 if await self.api.core_state(cfg["power_entity"]) != "off" or await disks.mounted_on_host():
                     raise RuntimeError("Destination is already powered or mounted; refusing to interfere")
                 state.update(

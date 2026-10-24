@@ -19,6 +19,8 @@ class DiskTests(unittest.IsolatedAsyncioTestCase):
 
         async def output(*args, **kwargs):
             args = tuple(map(str, args))
+            if args[0] == "journalctl":
+                self.assertIn("--directory=/var/log/journal", args)
             if args[:3] == ("lsblk", "-ndo", "PKNAME"):
                 return "sdb"
             if args[:3] == ("lsblk", "-ndo", "TYPE"):
@@ -51,6 +53,45 @@ class DiskTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_final_kernel_flush_confirmation_allows_removal(self):
         await self.removal_fixture("sd 1:0:0:0: [sdb] Synchronizing SCSI cache")
+
+    async def test_persistent_host_journal_is_selected_explicitly(self):
+        disks = Disks(DEFAULTS, AsyncMock())
+        with patch(
+            "steward.disks.command",
+            new_callable=AsyncMock,
+            return_value="kernel event\n-- cursor: persistent-cursor",
+        ) as read:
+            await disks.validate_journal()
+        self.assertEqual(disks.journal_root, "/var/log/journal")
+        self.assertIn("--directory=/var/log/journal", read.call_args.args)
+
+    async def test_volatile_journal_is_used_when_persistent_journal_is_empty(self):
+        disks = Disks(DEFAULTS, AsyncMock())
+        with patch(
+            "steward.disks.command",
+            new_callable=AsyncMock,
+            side_effect=["-- No entries --", "kernel event\n-- cursor: volatile-cursor"],
+        ):
+            await disks.validate_journal()
+        self.assertEqual(disks.journal_root, "/run/log/journal")
+
+    async def test_unreadable_journal_falls_back_to_volatile_mapping(self):
+        disks = Disks(DEFAULTS, AsyncMock())
+        with patch(
+            "steward.disks.command",
+            new_callable=AsyncMock,
+            side_effect=[RuntimeError("unreadable"), "-- cursor: volatile-cursor"],
+        ):
+            await disks.validate_journal()
+        self.assertEqual(disks.journal_root, "/run/log/journal")
+
+    async def test_no_host_journal_blocks_removal_before_unmount(self):
+        host = AsyncMock()
+        disks = Disks(DEFAULTS, host)
+        with patch("steward.disks.command", new_callable=AsyncMock, return_value="-- No entries --"):
+            with self.assertRaisesRegex(RuntimeError, "disk operations are blocked"):
+                await disks.safe_remove()
+        host.stop.assert_not_awaited()
 
     async def test_kernel_flush_error_blocks_removal_confirmation(self):
         with self.assertRaisesRegex(RuntimeError, "failed SCSI"):

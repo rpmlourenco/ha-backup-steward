@@ -1,8 +1,10 @@
 # HA Backup Steward
 
+<img src="icon.png" width="80" height="80" alt="Backup Steward icon">
+
 Encrypted Home Assistant backups, verified offline copies, and safe disk shutdown — packaged as one app with a lightweight companion integration.
 
-> **Experimental 0.1.0.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
+> **Experimental 0.1.1.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
 
 ![Backup Steward interface](docs/images/overview.png)
 
@@ -95,3 +97,7 @@ docker build -t ha-backup-steward:dev backup_steward
 Run disk tests against fixtures only. Never mount `/dev`, host D-Bus, the HA filesystem or real disks into a test container. CI also validates component metadata/imports and builds the app. See [architecture](docs/ARCHITECTURE.md), [security](docs/SECURITY.md), and [migration acceptance](docs/MIGRATION.md).
 
 MIT licensed. Rclone is bundled from its upstream versioned container image; see [third-party notices](THIRD_PARTY.md).
+
+## Integration and repository icon
+
+The repository and `custom_components/backup_steward/brand/` ship the same icon as the app, with a 512 px high-resolution variant. Home Assistant serves these local assets without a brands-repository submission. Update the integration through HACS and reload/restart Core to discover the new brand folder; a browser refresh may be needed for cached images. Older HACS frontends may still show their CDN placeholder on the repository card even when the HA integration icon works; see [HACS issue 5402](https://github.com/hacs/integration/issues/5402). This app does not patch HACS to work around that separate frontend limitation.

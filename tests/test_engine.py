@@ -56,6 +56,14 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             self.engine.start()
         self.api.power.assert_not_called()
 
+    async def test_unreadable_host_journal_blocks_power_and_backup_creation(self):
+        self.disks.validate_journal.side_effect = RuntimeError("No host journal")
+        await self.run_engine()
+        self.api.power.assert_not_awaited()
+        self.api.create_l2.assert_not_awaited()
+        self.disks.mount.assert_not_awaited()
+        self.disks.safe_remove.assert_not_awaited()
+
     async def test_successful_test_copy_preserves_legacy_and_skips_pruning(self):
         await self.run_engine()
         self.assertEqual(self.state.data["state"], "success")
