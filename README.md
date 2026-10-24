@@ -4,7 +4,7 @@
 
 Encrypted Home Assistant backups, verified offline copies, and safe disk shutdown — packaged as one app with a lightweight companion integration.
 
-> **Experimental 0.1.1.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
+> **Experimental 0.1.2.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
 
 ![Backup Steward interface](docs/images/overview.png)
 
@@ -101,3 +101,9 @@ MIT licensed. Rclone is bundled from its upstream versioned container image; see
 ## Integration and repository icon
 
 The repository and `custom_components/backup_steward/brand/` ship the same icon as the app, with a 512 px high-resolution variant. Home Assistant serves these local assets without a brands-repository submission. Update the integration through HACS and reload/restart Core to discover the new brand folder; a browser refresh may be needed for cached images. Older HACS frontends may still show their CDN placeholder on the repository card even when the HA integration icon works; see [HACS issue 5402](https://github.com/hacs/integration/issues/5402). This app does not patch HACS to work around that separate frontend limitation.
+
+## App log
+
+The Supervisor Log tab receives concise startup and workflow messages on stdout: version/mode, configuration ready, schedule enabled or disabled (time/zone/checksum), interface ready, execution ID, validation, power/mount, native creation and waiting, delivery, L3/checksum, retention, safe removal and result. Failure/recovery messages include the affected stage and safe HTTP method/path/status. Polling does not produce a log line on every request. Known encryption/pairing/Supervisor secrets are redacted.
+
+The app requires the Supervisor `manager` role to read `/jobs/<uuid>` for native background-job completion. The narrower `backup` role permits creating backups but rejects that polling endpoint. Before powering the HDD, a harmless read-only permission probe verifies this exact access. No admin role is requested.

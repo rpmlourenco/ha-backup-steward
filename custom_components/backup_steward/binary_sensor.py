@@ -23,5 +23,8 @@ class StewardBinarySensor(StewardEntity, BinarySensorEntity):
     @property
     def is_on(self):
         if self.key == "needs_cleanup":
-            return bool(self.coordinator.data["state"].get(self.key))
+            state = self.coordinator.data["state"]
+            return bool(
+                state.get("recovery_required", state.get(self.key) and not self.coordinator.data.get("busy"))
+            )
         return bool(self.coordinator.data.get(self.key))

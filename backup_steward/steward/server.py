@@ -13,6 +13,7 @@ from . import VERSION
 from .config import public_config, validate
 from .schedule import due, next_run
 from .state import atomic_json
+from . import telemetry
 
 
 STATIC = Path(__file__).parent / "static"
@@ -50,7 +51,7 @@ def application(engine, ingress=False):
                 "version": VERSION,
                 "busy": engine.busy,
                 "mode": engine.cfg["execution_mode"],
-                "state": engine.state.public(),
+                "state": engine.state.public(busy=engine.busy),
                 "schedule_enabled": engine.cfg["schedule_enabled"],
                 "schedule_time": engine.cfg["schedule_time"],
                 "timezone": engine.cfg["timezone"],
@@ -103,8 +104,10 @@ def application(engine, ingress=False):
             if body.get("encryption_password") == "":
                 body.pop("encryption_password")
             updated = validate(dict(engine.cfg, **body))
+            telemetry.protect(updated.get("encryption_password"))
             atomic_json(engine.state.directory / "config.json", updated)
             engine.cfg = updated
+            telemetry.announce_policy(updated)
             return web.json_response(public_config(updated))
 
         async def pairing(request):

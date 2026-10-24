@@ -18,3 +18,10 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
 - Read-only diagnosis on the installed 0.1.0 app confirmed that implicit `journalctl` discovery returned no cursor, while `--directory=/var/log/journal` returned a kernel cursor. No disk operations were used for that diagnosis.
 - The HA smoke test additionally verifies that Core detects the integration's local `brand` directory.
 - 0.1.1 remains experimental; it does not activate the schedule, alter existing secrets or bypass physical acceptance.
+
+## 0.1.2 follow-up
+
+- 62 isolated tests pass, including real app startup with console output, enabled/disabled schedule summaries, workflow steps, credential redaction, exact native-job permission checks and recovery presentation while busy.
+- Official Home Assistant 2026.10.3 smoke passes, including recovery sensor transitions from a running job to an interrupted job needing cleanup.
+- The aarch64 app image builds successfully. No real disks, host D-Bus or production HA configuration are mounted into these tests.
+- The installed pilot's HTTP 403 was traced to the Supervisor `backup` role rejecting `/jobs/<uuid>`. This release requests `manager` and checks access before powering the destination. Hardware recovery and a complete L2/L3 run remain manual pilot acceptance steps.

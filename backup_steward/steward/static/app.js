@@ -70,6 +70,7 @@ async function refresh() {
 }
 function render() {
   const s = current.state;
+  const recovery = s.recovery_required ?? (s.needs_cleanup && !current.busy);
   $("version").textContent = `v${current.version}`;
   $("mode").textContent = {
     observe: "Modo de observação",
@@ -77,10 +78,16 @@ function render() {
     production: "Produção",
   }[current.mode];
   $("status-label").textContent =
-    current.mode === "observe" ? "Só observação" : labels[s.state] || s.state;
+    current.mode === "observe"
+      ? "Só observação"
+      : current.busy
+        ? s.state === "recovering"
+          ? "Recuperação em curso"
+          : "Backup em curso"
+        : labels[s.state] || s.state;
   $("status-badge").dataset.tone =
     current.mode === "observe" ? "observe" : s.state;
-  $("hero-title").textContent = s.needs_cleanup
+  $("hero-title").textContent = recovery
     ? "Vamos fechar o disco em segurança."
     : current.busy
       ? "Estamos a cuidar dos teus dados."
@@ -89,7 +96,7 @@ function render() {
         : current.mode === "observe"
           ? "Conhece a tua próxima rede de segurança."
           : "Pronto para a próxima cópia.";
-  $("hero-description").textContent = s.needs_cleanup
+  $("hero-description").textContent = recovery
     ? "A execução precisa de recuperação. A tomada só será desligada depois de o fecho seguro ser confirmado."
     : current.mode === "observe"
       ? "Explora as definições e prepara os discos. Neste modo, a app não inicia cópias nem altera a tomada."
@@ -97,15 +104,16 @@ function render() {
         ? "Podes acompanhar as etapas aqui. A app continua a trabalhar se reiniciares o Home Assistant."
         : "As cópias são verificadas antes de o disco offline ser desmontado e desligado.";
   $("banner").hidden =
-    !s.needs_cleanup && s.state !== "failed" && s.retention !== "failed";
-  $("banner").textContent = s.needs_cleanup
+    current.busy ||
+    (!recovery && s.state !== "failed" && s.retention !== "failed");
+  $("banner").textContent = recovery
     ? "O disco pode continuar ligado. Usa o fecho seguro; não desligues a tomada diretamente."
     : s.retention === "failed"
       ? "A cópia L2 foi entregue, mas a retenção precisa de atenção."
       : "A execução não terminou com sucesso. Consulta a atividade e confirma o estado do destino.";
   $("run").disabled = $("verify").disabled =
     current.busy || current.mode === "observe" || s.needs_cleanup;
-  $("recover").hidden = !s.needs_cleanup;
+  $("recover").hidden = !recovery;
   $("recover").disabled = current.busy || current.mode === "observe";
   $("next-run").textContent = current.schedule_enabled
     ? stamp(current.next_run)

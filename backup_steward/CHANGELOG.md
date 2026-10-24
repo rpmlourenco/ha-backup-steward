@@ -1,3 +1,12 @@
+# 0.1.2 — Console logs, native-job permission and recovery presentation
+
+- Write concise timestamped startup, schedule, phase, outcome and recovery messages to the Supervisor Log tab.
+- Redact encryption, pairing and Supervisor credentials; never dump request bodies or headers.
+- Use the Supervisor manager role required by native background-job polling; probe access before power-on.
+- Include safe HTTP method/path/status in API failures.
+- Distinguish active disk ownership from recovery required; running jobs no longer show a recovery warning.
+- Preserve pending job identity and disk state across updates; never retry an unknown native backup automatically.
+
 # 0.1.1 — Host journal and local branding
 
 - Select the mapped host journal explicitly, independent of the container machine ID.

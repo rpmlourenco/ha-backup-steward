@@ -1,6 +1,6 @@
 {
   "name": "HA Backup Steward",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "slug": "backup_steward",
   "description": "Backups L2/L3, offline disks and integrity checks in one app. Experimental; observe-only by default.",
   "url": "https://github.com/rpmlourenco/ha-backup-steward",
@@ -14,7 +14,7 @@
   "init": true,
   "timeout": 120,
   "hassio_api": true,
-  "hassio_role": "backup",
+  "hassio_role": "manager",
   "homeassistant_api": true,
   "host_dbus": true,
   "journald": true,

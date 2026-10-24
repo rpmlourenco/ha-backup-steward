@@ -65,7 +65,21 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.disks.safe_remove.assert_not_awaited()
 
     async def test_successful_test_copy_preserves_legacy_and_skips_pruning(self):
-        await self.run_engine()
+        with self.assertLogs("steward", level="INFO") as logs:
+            await self.run_engine()
+        output = "\n".join(logs.output)
+        for step in (
+            "Execução iniciada",
+            "preflight:",
+            "mount:",
+            "l2_create:",
+            "l2_download:",
+            "l3_copy:",
+            "safe_remove:",
+            "Execução concluída",
+        ):
+            self.assertIn(step, output)
+        self.assertNotIn("fixture-secret", output)
         self.assertEqual(self.state.data["state"], "success")
         self.assertEqual(self.state.data["l2"], "delivered")
         self.assertEqual(self.state.data["retention"], "disabled_in_test")

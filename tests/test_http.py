@@ -40,6 +40,21 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("never-expose-this", text)
         self.assertNotIn(self.state.identity["api_token"], text)
 
+    async def test_active_disk_does_not_report_recovery_during_a_running_job(self):
+        self.state.update(state="running", needs_cleanup=True)
+        await self.engine.lock.acquire()
+        try:
+            response = await self.client.get("/v1/status", headers=self.auth())
+            result = await response.json()
+            self.assertTrue(result["busy"])
+            self.assertTrue(result["state"]["needs_cleanup"])
+            self.assertFalse(result["state"]["recovery_required"])
+        finally:
+            self.engine.lock.release()
+        self.state.update(state="failed")
+        response = await self.client.get("/v1/status", headers=self.auth())
+        self.assertTrue((await response.json())["state"]["recovery_required"])
+
     async def test_observation_rejects_execution_and_arbitrary_operations(self):
         for mode in ("backup", "reboot; rm -rf /", "checksum"):
             response = await self.client.post("/v1/run", headers=self.auth(), json={"mode": mode})

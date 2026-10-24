@@ -19,7 +19,7 @@ from homeassistant.helpers import area_registry, device_registry, entity_registr
 async def main():
     requests = []
     data = {
-        "version": "0.1.1",
+        "version": "0.1.2",
         "busy": False,
         "mode": "test",
         "schedule_enabled": False,
@@ -100,6 +100,21 @@ async def main():
                 states = hass.states.async_all()
                 assert len([s for s in states if s.entity_id.startswith("sensor.")]) >= 8
                 assert len([s for s in states if s.entity_id.startswith("button.")]) == 4
+                registry = entity_registry.async_get(hass)
+                recovery_entity = registry.async_get_entity_id(
+                    "binary_sensor", "backup_steward", "fixture-instance_needs_cleanup"
+                )
+                data["busy"] = True
+                data["state"].update(state="running", needs_cleanup=True, recovery_required=False)
+                await entry.runtime_data.coordinator.async_refresh()
+                await hass.async_block_till_done()
+                self_state = hass.states.get(recovery_entity)
+                assert self_state.state == "off", self_state
+                data["busy"] = False
+                data["state"].update(state="failed", recovery_required=True)
+                await entry.runtime_data.coordinator.async_refresh()
+                await hass.async_block_till_done()
+                assert hass.states.get(recovery_entity).state == "on"
                 assert await hass.config_entries.async_unload(entry.entry_id)
                 assert not hass.services.has_service("backup_steward", "run")
                 print(

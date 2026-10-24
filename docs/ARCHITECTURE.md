@@ -46,6 +46,8 @@ Journal discovery explicitly selects `/var/log/journal` or `/run/log/journal`, r
 
 ## API
 
+The app emits concise timestamped lifecycle and workflow events to stdout for the Supervisor Log tab. Startup distinguishes a ready scheduler from an enabled schedule. Errors identify the failing phase without logging credentials or raw API bodies. Persistent `needs_cleanup` records disk ownership during a run; public `recovery_required` is true only when cleanup is pending and no job is busy.
+
 Port 8099 serves the UI only to the configured Supervisor ingress peer, default `172.30.32.2`. State-changing browser requests require a custom header; there is no permissive CORS policy. Port 8100 is not exposed on the host by default; it authenticates every request using a random per-installation pairing key.
 
 | Endpoint | Purpose |

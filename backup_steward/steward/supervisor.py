@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 
 import aiohttp
+from . import telemetry
 
 
 class APIError(RuntimeError):
@@ -21,6 +22,7 @@ class JobFailed(APIError):
 
 class Supervisor:
     def __init__(self, session, token, base="http://supervisor"):
+        telemetry.protect(token)
         self.session = session
         self.headers = {"Authorization": f"Bearer {token}"}
         self.base = base.rstrip("/")
@@ -34,7 +36,9 @@ class Supervisor:
             timeout=aiohttp.ClientTimeout(total=60),
         ) as response:
             if response.status >= 400:
-                raise APIError(f"Supervisor request failed: HTTP {response.status}", response.status)
+                raise APIError(
+                    f"Supervisor {method} {path.split('?')[0]}: HTTP {response.status}", response.status
+                )
             result = await response.json()
             if isinstance(result, dict) and result.get("result") == "error":
                 raise APIError("Supervisor rejected the request")
@@ -55,6 +59,13 @@ class Supervisor:
         raise APIError("Power switch did not confirm the requested state")
 
     async def preflight(self, cfg):
+        # /jobs/info is readable with the backup role, but /jobs/<uuid> is not.
+        # Probe the exact permission used by polling before touching the HDD.
+        try:
+            await self.request("GET", "/jobs/00000000000000000000000000000000")
+        except APIError as error:
+            if error.status != 404:
+                raise
         for entity in cfg["legacy_scripts"]:
             try:
                 status = await self.core_state(entity)
@@ -105,6 +116,7 @@ class Supervisor:
         job = result.get("job_id")
         if not job:
             raise APIError("Supervisor did not return a backup job ID")
+        telemetry.event(f"Supervisor aceitou a criação L2; trabalho={job}")
         return job
 
     async def wait_job(self, job, minutes):
@@ -116,6 +128,7 @@ class Supervisor:
                 if result.get("done"):
                     if result.get("errors"):
                         raise JobFailed("Supervisor backup job failed; inspect Supervisor logs")
+                    telemetry.event(f"Trabalho nativo concluído; trabalho={job}")
                     return
                 await asyncio.sleep(2)
 

@@ -12,11 +12,13 @@ from .disks import Disks, Host
 from .schedule import checksum_due
 from .storage import Copier, confined, prune_l2
 from .supervisor import APIError, JobFailed
+from . import telemetry
 
 
 class Engine:
     def __init__(self, cfg, state, supervisor, host_factory=Host, disks_factory=Disks, copier_factory=Copier):
         self.cfg, self.state, self.api = cfg, state, supervisor
+        telemetry.protect(cfg.get("encryption_password"))
         self.host_factory, self.disks_factory, self.copier_factory = (
             host_factory,
             disks_factory,
@@ -62,15 +64,9 @@ class Engine:
             cleanup_needed = False
             backup_pending = False
             try:
-                await self.api.preflight(cfg)
-                await host.acquire()
-                await disks.validate_source()
-                await disks.validate_journal()
-                if await self.api.core_state(cfg["power_entity"]) != "off" or await disks.mounted_on_host():
-                    raise RuntimeError("Destination is already powered or mounted; refusing to interfere")
                 state.update(
                     state="running",
-                    stage="power",
+                    stage="preflight",
                     run_id=run_id,
                     mode=mode,
                     execution_mode=cfg["execution_mode"],
@@ -80,6 +76,7 @@ class Engine:
                     retention="pending",
                     config_snapshot=public_config(cfg),
                     error=None,
+                    error_detail=None,
                     backup_job=None,
                     backup_name=None,
                     backup_slug=None,
@@ -87,17 +84,27 @@ class Engine:
                     backup_pending=False,
                     failure_stage=None,
                 )
+                state.event("preflight", "A validar permissões, ausência de concorrência, discos e journal")
+                await self.api.preflight(cfg)
+                await host.acquire()
+                await disks.validate_source()
+                await disks.validate_journal()
+                if await self.api.core_state(cfg["power_entity"]) != "off" or await disks.mounted_on_host():
+                    raise RuntimeError("Destination is already powered or mounted; refusing to interfere")
                 if scheduled_date:
                     state.update(last_schedule_date=scheduled_date)
                 # Record ownership before the first side effect; recovery fails safe on uncertain outcomes.
                 cleanup_needed = True
                 state.update(needs_cleanup=True)
+                state.event("power", "A ligar a tomada do destino")
                 await self.api.power(cfg["power_entity"], True)
+                state.event("mount", "A montar e validar o disco de destino")
                 await disks.mount()
+                state.event("mount_ready", "Destino montado e acessível; a verificar espaço livre")
                 if shutil.disk_usage(cfg["destination_mount"]).free < cfg["min_free_gib"] * 1024**3:
                     raise RuntimeError("Destination free space is below policy")
                 if mode != "checksum":
-                    state.event("l2_create", "Creating encrypted native L2")
+                    state.event("l2_create", "A criar o L2 nativo, comprimido e encriptado")
                     name = f"HA Backup Steward L2 {run_id} {secrets.token_hex(4)}"
                     state.update(backup_name=name)
                     # Persist pending before POST: a lost HTTP response must not trigger unmount while HA is backing up.
@@ -105,9 +112,11 @@ class Engine:
                     state.update(backup_pending=True)
                     job = await self.api.create_l2(cfg, name)
                     state.update(backup_job=job)
+                    state.event("l2_wait", f"A aguardar a criação nativa; trabalho={job}")
                     await self.api.wait_job(job, cfg["backup_timeout_minutes"])
                     backup_pending = False
                     state.update(backup_pending=False)
+                    state.event("l2_created", "Criação nativa concluída; a confirmar o arquivo encriptado")
                     slug, info = await self.api.find_backup(name)
                     state.update(backup_slug=slug)
                     directory = Path(cfg["source_mount"]) / (
@@ -117,7 +126,8 @@ class Engine:
                     await disks.validate_source()
                     directory.mkdir(parents=True, exist_ok=True)
                     state.event(
-                        "l2_download", "Transferring L2; retention is blocked until delivery completes"
+                        "l2_download",
+                        "A transferir o L2; a retenção só é permitida depois da entrega confirmada",
                     )
                     async with asyncio.timeout(cfg["backup_timeout_minutes"] * 60):
                         path, digest = await self.api.download(
@@ -143,10 +153,10 @@ class Engine:
                             )
                     else:
                         state.update(retention="disabled_in_test")
-                    state.event("l3_copy", "Copying and checking L3")
+                    state.event("l3_copy", "A copiar e verificar o L3")
                     await copier.copy(run_id, test)
                 if checksum:
-                    state.event("checksum", "Comparing complete source and mirror SHA-256 checksums")
+                    state.event("checksum", "A comparar os checksums SHA-256 completos")
                     await copier.checksum(test)
                     # A test checksum cannot satisfy the production checksum calendar.
                     if not test:
@@ -155,10 +165,11 @@ class Engine:
                     await disks.validate_destination()
                     await asyncio.to_thread(copier.prune_history)
                 state.update(l3="success")
-                state.event("safe_remove", "Synchronizing, unmounting and confirming final SCSI cache flush")
+                state.event("safe_remove", "A sincronizar, desmontar e confirmar o flush SCSI final")
                 await disks.safe_remove()
                 state.update(safe_to_power_off=True)
                 await disks.verify_removed()
+                state.event("power_off", "Fecho seguro confirmado; a desligar a tomada")
                 await self.api.power(cfg["power_entity"], False)
                 cleanup_needed = False
                 state.update(
@@ -194,7 +205,7 @@ class Engine:
                     if secret:
                         detail = detail.replace(secret, "[redacted]")
                 failed_stage = state.data.get("stage")
-                state.event("failure_detail", detail[:240])
+                state.event("failure_detail", f"Falha na etapa {failed_stage}: {detail[:240]}")
                 state.update(
                     state="failed",
                     error=type(error).__name__,
@@ -204,7 +215,13 @@ class Engine:
                 )
                 await self.notify("Backup Steward failed. Inspect the stage and recovery status in the app.")
             finally:
+                if cleanup_needed and backup_pending:
+                    state.event(
+                        "recovery_required",
+                        "Estado do trabalho nativo por confirmar; disco e alimentação mantidos, recuperação necessária",
+                    )
                 if cleanup_needed and not backup_pending:
+                    state.event("cleanup_after_failure", "A tentar concluir o fecho seguro após a falha")
                     try:
                         if not state.data.get("safe_to_power_off"):
                             await disks.safe_remove()
@@ -212,9 +229,14 @@ class Engine:
                         await disks.verify_removed()
                         await self.api.power(cfg["power_entity"], False)
                         state.update(needs_cleanup=False)
-                    except Exception:
+                        state.event("cleanup_done", "Fecho seguro concluído após a falha; tomada desligada")
+                    except Exception as cleanup_error:
                         state.update(needs_cleanup=True)
-                        state.event("recovery_required", "Safe shutdown not confirmed; power remains on")
+                        state.event(
+                            "recovery_required",
+                            "Fecho seguro não confirmado; alimentação mantida: "
+                            + telemetry.redact(str(cleanup_error))[:240],
+                        )
                 # Keep the lease during an uncertain native backup or incomplete physical cleanup.
                 if not state.data.get("needs_cleanup"):
                     await host.release()
@@ -233,11 +255,16 @@ class Engine:
             host = self.host_factory(self.state.identity["instance_id"])
             disks = self.disks_factory(cfg, host)
             try:
+                self.state.update(state="recovering", stage="recovery_start")
+                self.state.event(
+                    "recovery_start", "A recuperar a execução anterior; não será criado outro backup"
+                )
                 await host.acquire(recovering=True)
                 job = self.state.data.get("backup_job")
                 if self.state.data.get("backup_pending"):
                     if not job:
                         raise RuntimeError("Native backup outcome is unknown; manual diagnosis required")
+                    self.state.event("recovery_wait", f"A confirmar o fim do trabalho nativo {job}")
                     try:
                         await self.api.wait_job(job, cfg["backup_timeout_minutes"])
                     except JobFailed:
@@ -245,11 +272,23 @@ class Engine:
                     self.state.update(backup_pending=False)
                 await self.api.preflight(cfg)
                 if not self.state.data.get("safe_to_power_off"):
+                    self.state.event(
+                        "recovery_shutdown",
+                        "Trabalho nativo terminado; a concluir a desmontagem e flush seguros",
+                    )
                     await disks.safe_remove()
                     self.state.update(safe_to_power_off=True)
                 await disks.verify_removed()
                 await self.api.power(cfg["power_entity"], False)
                 self.state.update(needs_cleanup=False, state="interrupted", stage="recovered")
                 await host.release()
+                self.state.event("recovered", "Recuperação concluída; destino desligado em segurança")
+            except Exception as error:
+                detail = telemetry.redact(str(error))[:240]
+                self.state.event("failure_detail", f"Recuperação falhou: {detail}")
+                self.state.update(
+                    state="failed", needs_cleanup=True, error=type(error).__name__, error_detail=detail
+                )
+                raise
             finally:
                 await host.close()

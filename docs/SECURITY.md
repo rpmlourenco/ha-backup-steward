@@ -16,3 +16,5 @@ This app manages physical disks and therefore is privileged. Protection mode mus
 The ingress peer override `STEWARD_INGRESS_IP` is for controlled container/UI testing only; it is not an app option. Do not expose ingress port 8099 directly. If exposing the authenticated 8100 API outside the HA container network, provide appropriate transport security; the default exposes no host port.
 
 Report defects through GitHub issues without posting tokens, passwords, complete app data, authenticated URLs or unredacted logs. The project does not automatically upload diagnostics.
+
+Supervisor API role: `manager` is required for read-only background-job polling (`/jobs/<uuid>`), which the `backup` role does not permit. Manager also grants other Supervisor management endpoints, although the adapter only implements the backup/polling/Core calls documented here. Review this permission when updating from 0.1.1. It is not an `admin` token and is never exported to the integration or logs.
