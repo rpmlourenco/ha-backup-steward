@@ -1,3 +1,10 @@
+# 0.1.4 — Host-side kernel disk removal
+
+- Request kernel disk removal through host systemd over the existing D-Bus connection. App sysfs remains read-only.
+- Use a temporary oneshot unit running the stock tee utility with fixed stdin and a validated kernel-device path; no shell or persistent host helper is installed.
+- Require the owned backup lease and confirmed command completion. Disk disappearance and final kernel SCSI flush remain mandatory before power-off.
+- Cover D-Bus property types, success/failure/timeout, unsafe device names and missing ownership in isolated tests.
+
 # 0.1.3 — Explicit disk topology during safe removal
 
 - Request explicit tree output from lsblk when validating a dedicated destination disk. PATH/TYPE/UUID JSON otherwise returns a flat list, causing valid one-partition disks to be rejected.

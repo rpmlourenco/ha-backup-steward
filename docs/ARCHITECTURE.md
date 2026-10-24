@@ -31,6 +31,8 @@ The app reads the host journal to require the same final SCSI flush evidence as 
 
 Journal discovery explicitly selects `/var/log/journal` or `/run/log/journal`, rather than the container's machine ID. A readable kernel cursor is required before power-on, and the selected directory stays fixed for the removal cursor and subsequent kernel-event checks. Empty or unreadable mappings block disk operations.
 
+App sysfs is read-only. After UUID/layout validation, sync, unmount and block-device fsync, kernel removal is requested through a temporary host systemd oneshot unit over the existing D-Bus connection. The fixed `/usr/bin/tee` command receives `1\n` via binary stdin and writes only to the validated `/sys/class/block/<kernel-name>/device/delete` path. No shell or permanent host helper is used. The unit is stopped after its result is checked; command success alone never permits power-off without the subsequent disappearance and kernel SCSI confirmation.
+
 **HAOS hardware acceptance is a release gate:** D-Bus policy, media mount propagation, block-device visibility and journal visibility must all be proven on the actual host before enabling production. A successful Docker build cannot prove these properties.
 
 ## Execution invariants

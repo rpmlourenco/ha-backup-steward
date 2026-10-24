@@ -31,3 +31,9 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
 - 63 isolated tests, the official Home Assistant 2026.10.3 smoke test and the ARM64 image build pass.
 - Read-only inspection of the actual HDD confirmed that PATH/TYPE/UUID output is flat without `--tree`, and correctly nested with it. The disk has one ext4 partition with the configured UUID. The failed 0.1.2 recovery stopped before unmount; no disk operation or power change was performed by these diagnostics.
 - Regression tests model that exact lsblk behavior and preserve rejection of invalid layouts before sync, unmount or kernel removal. Hardware safe-removal acceptance remains pending.
+
+## 0.1.4 follow-up
+
+- 66 isolated tests pass, including host removal request properties with real D-Bus Variant validation, missing lease, unsafe device names and failed/unknown command outcomes. Existing kernel flush failure/absence tests remain required.
+- Read-only pilot diagnosis confirmed sysfs is read-only inside the app and writable on HAOS. The HDD had been unmounted before the 0.1.3 recovery failed; the disk remained present and power remained on. The stock host tee utility exists.
+- The official Home Assistant 2026.10.3 smoke and ARM64 build pass. Actual execution of the new host removal unit remains a manual hardware acceptance step; diagnostics did not run it.

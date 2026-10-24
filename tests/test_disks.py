@@ -59,10 +59,60 @@ class DiskTests(unittest.IsolatedAsyncioTestCase):
         ):
             await disks.safe_remove()
             flush.assert_called_once_with(99)
-            detach.assert_called_once_with("1\n", encoding="ascii")
+            disks.host.remove_disk.assert_awaited_once_with("sdb")
+            detach.assert_not_called()
 
     async def test_final_kernel_flush_confirmation_allows_removal(self):
         await self.removal_fixture("sd 1:0:0:0: [sdb] Synchronizing SCSI cache")
+
+    async def test_kernel_removal_uses_fixed_host_command_and_binary_stdin(self):
+        from dbus_fast import Variant
+
+        host = Host("fixture")
+        host.lease_owned = True
+        host.start = AsyncMock()
+        host.stop = AsyncMock()
+        host.unit = AsyncMock(
+            side_effect=[{"ActiveState": "activating"}, {"ActiveState": "active", "SubState": "exited"}]
+        )
+        with patch("steward.disks.asyncio.sleep", new_callable=AsyncMock):
+            await host.remove_disk("sdb")
+        name, properties = host.start.call_args.args
+        values = {key: Variant(signature, value).value for key, signature, value in properties}
+        self.assertTrue(name.startswith("ha-backup-steward-remove-"))
+        self.assertEqual(
+            values["ExecStart"],
+            [["/usr/bin/tee", ["/usr/bin/tee", "/sys/class/block/sdb/device/delete"], False]],
+        )
+        self.assertEqual(values["StandardInputData"], b"1\n")
+        self.assertEqual(values["StandardInput"], "data")
+        self.assertEqual(values["Type"], "oneshot")
+        self.assertTrue(values["RemainAfterExit"])
+        host.stop.assert_awaited_once_with(name)
+
+    async def test_kernel_removal_requires_owned_lock_and_safe_device_name(self):
+        host = Host("fixture")
+        host.start = AsyncMock()
+        with self.assertRaisesRegex(RuntimeError, "owned host backup lock"):
+            await host.remove_disk("sdb")
+        host.lease_owned = True
+        for name in ("../sdb", "sdb\n", "sdb/device", "sdb;echo", ""):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                await host.remove_disk(name)
+        host.start.assert_not_awaited()
+
+    async def test_failed_or_unknown_host_removal_never_reports_success(self):
+        for result in ({"ActiveState": "failed"}, None):
+            with self.subTest(result=result):
+                host = Host("fixture")
+                host.lease_owned = True
+                host.start = AsyncMock()
+                host.stop = AsyncMock()
+                host.unit = AsyncMock(return_value=result)
+                with patch("steward.disks.asyncio.sleep", new_callable=AsyncMock):
+                    with self.assertRaisesRegex(RuntimeError, "leave power on"):
+                        await host.remove_disk("sdb")
+                host.stop.assert_awaited_once()
 
     async def test_invalid_partition_layout_blocks_before_sync_unmount_or_detach(self):
         for children in (
@@ -89,6 +139,7 @@ class DiskTests(unittest.IsolatedAsyncioTestCase):
                     with self.assertRaisesRegex(RuntimeError, "dedicated backup partition"):
                         await disks.safe_remove()
                 host.stop.assert_not_awaited()
+                host.remove_disk.assert_not_awaited()
                 sync.assert_not_called()
                 detach.assert_not_called()
 

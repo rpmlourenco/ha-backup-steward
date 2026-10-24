@@ -3,6 +3,7 @@
 This app manages physical disks and therefore is privileged. Protection mode must be disabled for `full_access`. Host D-Bus can perform privileged systemd operations; the app's code restricts itself to named mount/lease units, but the container itself is not a security boundary against a compromise of its own privileged process.
 
 - No Docker socket, host PID namespace, SSH key or host-installed helper is needed.
+- Kernel disk removal uses a temporary host systemd unit with a fixed executable, fixed stdin and a validated kernel-device path. The app does not remount sysfs or request additional container privileges. The owned backup lease is required; the final SCSI proof remains mandatory.
 - The Supervisor injects its app token. Never enter, print or commit it.
 - The integration uses a separate random pairing token scoped to this app API.
 - Status/configuration responses do not contain encryption passwords or tokens. Pairing-token reveal is a deliberate ingress-only action.

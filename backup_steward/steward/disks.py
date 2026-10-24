@@ -7,6 +7,8 @@ NASRUI automount remains exclusively owned by the existing udev rule.
 import asyncio
 import json
 import os
+import re
+import secrets
 from pathlib import Path
 
 from .storage import command, confined
@@ -128,6 +130,41 @@ class Host:
         if self.lease_owned:
             await self.stop(self.lease_unit)
             self.lease_owned = False
+
+    async def remove_disk(self, parent):
+        # sysfs is read-only inside apps. Run the one fixed write through the
+        # existing host D-Bus channel; no shell, persistent helper or remount.
+        if not self.lease_owned:
+            raise RuntimeError("Disk removal requires the owned host backup lock")
+        if not isinstance(parent, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", parent):
+            raise ValueError("Invalid whole-disk kernel name")
+        name = f"ha-backup-steward-remove-{secrets.token_hex(6)}.service"
+        path = f"/sys/class/block/{parent}/device/delete"
+        try:
+            await self.start(
+                name,
+                [
+                    ("Description", "s", "HA Backup Steward kernel disk removal"),
+                    ("Type", "s", "oneshot"),
+                    ("RemainAfterExit", "b", True),
+                    ("TimeoutStartUSec", "t", 30_000_000),
+                    ("StandardInput", "s", "data"),
+                    ("StandardInputData", "ay", b"1\n"),
+                    ("StandardOutput", "s", "null"),
+                    ("StandardError", "s", "journal"),
+                    ("ExecStart", "a(sasb)", [["/usr/bin/tee", ["/usr/bin/tee", path], False]]),
+                ],
+            )
+            for _ in range(30):
+                state = await self.unit(name)
+                if state and state["ActiveState"] == "active" and state.get("SubState") == "exited":
+                    return
+                if state and state["ActiveState"] in ("inactive", "failed"):
+                    raise RuntimeError("Host kernel disk-removal request failed; leave power on")
+                await asyncio.sleep(1)
+            raise RuntimeError("Host kernel disk-removal request timed out; leave power on")
+        finally:
+            await self.stop(name)
 
     async def close(self):
         if self.bus:
@@ -297,8 +334,7 @@ class Disks:
             os.close(fd)
         # Read-only host journal mapping provides the same kernel confirmation as the old helper.
         cursor = await self.journal_cursor(self.journal_root)
-        removal = Path("/sys/class/block") / parent / "device/delete"
-        removal.write_text("1\n", encoding="ascii")
+        await self.host.remove_disk(parent)
         await asyncio.sleep(5)
         if disk.exists() or Path(device).exists():
             raise RuntimeError("Disk did not leave the kernel; leave power on")
