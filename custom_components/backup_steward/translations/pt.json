@@ -1,0 +1,14 @@
+{
+  "title": "HA Backup Steward",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ligar ao Backup Steward",
+        "description": "Indica o hostname interno da app e a porta 8100. Copia a chave nas definições da app. A agenda é gerida exclusivamente pela app.",
+        "data": {"url": "Endereço da app", "token": "Chave de ligação"}
+      }
+    },
+    "error": {"cannot_connect": "Não foi possível ligar à app", "invalid_auth": "Chave de ligação inválida", "invalid_url": "Usa um endereço HTTP(S) sem credenciais, parâmetros ou caminho"},
+    "abort": {"already_configured": "Esta instância já está configurada"}
+  }
+}

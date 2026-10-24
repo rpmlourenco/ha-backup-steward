@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Backup Steward</title>
+    <link rel="icon" href="static/icon.svg" />
+    <link rel="stylesheet" href="static/style.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div class="brand">
+          <img src="static/icon.svg" alt="" width="44" height="44" />
+          <div>
+            <strong>Backup Steward</strong
+            ><span>Os teus dados, bem guardados.</span>
+          </div>
+        </div>
+        <button
+          id="settings-toggle"
+          class="icon-button"
+          aria-label="Abrir definições"
+          title="Definições"
+        >
+          <svg viewBox="0 0 24 24">
+            <path d="M4 7h16M4 17h16M8 4v6m8 4v6" />
+          </svg>
+        </button>
+      </header>
+      <main>
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">A TUA REDE DE SEGURANÇA</p>
+            <h1>Tranquilidade, todos os dias.</h1>
+            <p class="subtitle">
+              Backups locais, uma cópia offline e tudo no seu lugar.
+            </p>
+          </div>
+          <span id="mode" class="pill">A carregar</span>
+        </div>
+        <div id="banner" class="banner" hidden></div>
+        <section class="hero card">
+          <div class="hero-copy">
+            <span id="status-badge" class="status-badge"
+              ><i></i><span id="status-label">A ligar à app</span></span
+            >
+            <h2 id="hero-title">Vamos verificar os teus backups.</h2>
+            <p id="hero-description">
+              O estado da última execução aparece aqui.
+            </p>
+            <div class="hero-actions">
+              <button class="primary" id="run">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 3v12m-5-5 5 5 5-5M5 15v5h14v-5" /></svg
+                >Fazer backup</button
+              ><button class="secondary" id="verify">
+                Verificar integridade</button
+              ><button class="secondary" id="recover" hidden>
+                Concluir fecho seguro
+              </button>
+            </div>
+          </div>
+          <div class="hero-art" aria-hidden="true">
+            <div class="orbit orbit-1"></div>
+            <div class="orbit orbit-2"></div>
+            <img src="static/icon.svg" width="126" height="126" alt="" /><span
+              class="spark spark-1"
+              >✦</span
+            ><span class="spark spark-2">✧</span>
+          </div>
+        </section>
+        <section class="metrics">
+          <article class="card metric">
+            <span class="metric-icon blue"
+              ><svg viewBox="0 0 24 24">
+                <path d="M7 3v4m10-4v4M4 10h16M4 5h16v16H4zM8 14h3v3H8z" /></svg
+            ></span>
+            <p>Próximo backup</p>
+            <strong id="next-run">—</strong
+            ><small id="schedule-note">Agenda da app</small>
+          </article>
+          <article class="card metric">
+            <span class="metric-icon green"
+              ><svg viewBox="0 0 24 24">
+                <path d="m5 12 4 4L19 6M12 3a9 9 0 1 0 9 9" /></svg
+            ></span>
+            <p>Última cópia concluída</p>
+            <strong id="last-success">Ainda sem execuções</strong
+            ><small>Com o destino fechado em segurança</small>
+          </article>
+          <article class="card metric">
+            <span class="metric-icon purple"
+              ><svg viewBox="0 0 24 24">
+                <path
+                  d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6zM9 12l2 2 4-5"
+                /></svg
+            ></span>
+            <p>Verificação integral</p>
+            <strong id="checksum-frequency">Mensal</strong
+            ><small id="last-checksum">Ainda não realizada</small>
+          </article>
+        </section>
+        <section class="card journey">
+          <div class="section-heading">
+            <div>
+              <h2>Uma cópia. Várias proteções.</h2>
+              <p>Da criação ao fecho do disco, cada etapa conta.</p>
+            </div>
+            <span id="run-id" class="muted"></span>
+          </div>
+          <div class="steps">
+            <div data-step="l2">
+              <span>01</span><strong>Backup L2</strong
+              ><small>Apps e configuração</small
+              ><em id="l2-state">A aguardar</em>
+            </div>
+            <div data-step="l3">
+              <span>02</span><strong>Cópia L3</strong
+              ><small>Dados no disco offline</small
+              ><em id="l3-state">A aguardar</em>
+            </div>
+            <div data-step="retention">
+              <span>03</span><strong>Retenção</strong
+              ><small>Só as versões necessárias</small
+              ><em id="retention-state">A aguardar</em>
+            </div>
+            <div data-step="cleanup">
+              <span>04</span><strong>Fecho seguro</strong
+              ><small>Desmontar e desligar</small
+              ><em id="cleanup-state">A aguardar</em>
+            </div>
+          </div>
+        </section>
+        <div class="lower-grid">
+          <section class="card activity">
+            <div class="section-heading">
+              <h2>Atividade recente</h2>
+              <span class="live-dot">Atualização automática</span>
+            </div>
+            <ol id="events">
+              <li class="empty">
+                As etapas da próxima execução vão aparecer aqui.
+              </li>
+            </ol>
+          </section>
+          <aside class="card detail">
+            <span class="metric-icon blue"
+              ><svg viewBox="0 0 24 24">
+                <path d="M4 5h16v6H4zM4 14h16v6H4zM16 8h1m-1 9h1" /></svg
+            ></span>
+            <h2>Proteção com espaço para respirar.</h2>
+            <p id="retention-note">
+              A retenção só é aplicada depois de uma cópia confirmada.
+            </p>
+            <div class="info-rule"></div>
+            <p>
+              O disco de origem mantém a montagem existente. A app valida a sua
+              identidade e só gere o disco de destino.
+            </p>
+          </aside>
+        </div>
+      </main>
+      <footer>
+        HA Backup Steward <span id="version"></span
+        ><span>Feito para cuidar, sem complicar.</span>
+      </footer>
+    </div>
+    <dialog id="settings">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">AO TEU RITMO</p>
+          <h2>Definições</h2>
+        </div>
+        <button id="close-settings" class="icon-button" aria-label="Fechar">
+          ✕
+        </button>
+      </div>
+      <form id="config-form">
+        <fieldset>
+          <legend>Como queres usar a app?</legend>
+          <label
+            >Modo<select name="execution_mode">
+              <option value="observe">Observação · sem alterações</option>
+              <option value="test">Teste · cópia separada, sem retenção</option>
+              <option value="production">Produção</option>
+            </select></label
+          ><label class="check"
+            ><input type="checkbox" name="legacy_scheduler_disabled" />Confirmei
+            que a agenda antiga está desativada</label
+          >
+        </fieldset>
+        <fieldset>
+          <legend>A tua agenda</legend>
+          <label class="check"
+            ><input type="checkbox" name="schedule_enabled" />Executar
+            diariamente</label
+          >
+          <div class="form-grid">
+            <label
+              >Hora<input type="time" name="schedule_time" required /></label
+            ><label
+              >Fuso horário<input
+                name="timezone"
+                required
+                placeholder="Europe/Madrid"
+            /></label>
+          </div>
+          <label
+            >Checksum integral<select name="checksum_frequency">
+              <option value="monthly">Mensal</option>
+              <option value="weekly">Semanal</option>
+              <option value="disabled">Só quando eu pedir</option>
+            </select></label
+          >
+          <div class="form-grid">
+            <label
+              >Dia da semana<select name="checksum_weekday">
+                <option value="0">Segunda-feira</option>
+                <option value="1">Terça-feira</option>
+                <option value="2">Quarta-feira</option>
+                <option value="3">Quinta-feira</option>
+                <option value="4">Sexta-feira</option>
+                <option value="5">Sábado</option>
+                <option value="6">Domingo</option>
+              </select></label
+            ><label
+              >Semana do mês<select name="checksum_month_week">
+                <option value="1">Primeira</option>
+                <option value="2">Segunda</option>
+                <option value="3">Terceira</option>
+                <option value="4">Quarta</option>
+              </select></label
+            >
+          </div>
+          <p class="help">
+            A app gere sempre a agenda. Um checksum em falta volta a ser tentado
+            nos backups seguintes.
+          </p>
+        </fieldset>
+        <fieldset>
+          <legend>Os teus discos</legend>
+          <div class="form-grid">
+            <label>Origem<input name="source_mount" required /></label
+            ><label
+              >UUID da origem<input
+                name="source_uuid"
+                placeholder="UUID da partição ext4" /></label
+            ><label
+              >Destino offline<input name="destination_mount" required /></label
+            ><label
+              >UUID do destino<input
+                name="destination_uuid"
+                placeholder="UUID da partição ext4"
+            /></label>
+          </div>
+          <label
+            >Tomada do destino<input
+              name="power_entity"
+              placeholder="switch.disco_backup" /></label
+          ><label
+            >Outras origens <small>Uma pasta /media por linha</small
+            ><textarea name="additional_sources" rows="3"></textarea>
+          </label>
+        </fieldset>
+        <fieldset>
+          <legend>Versões e encriptação</legend>
+          <div class="form-grid">
+            <label
+              >Backups L2 a conservar<input
+                type="number"
+                min="1"
+                max="365"
+                name="l2_keep"
+                required /></label
+            ><label
+              >Dias de histórico L3<input
+                type="number"
+                min="1"
+                max="3650"
+                name="history_days"
+                required
+            /></label>
+          </div>
+          <label
+            >Chave de encriptação<input
+              name="encryption_password"
+              type="password"
+              autocomplete="new-password"
+              placeholder="Deixa vazio para manter a chave atual"
+          /></label>
+          <p class="help">
+            Guarda a chave fora deste equipamento. É necessária para recuperar
+            os backups.
+          </p>
+        </fieldset>
+        <details>
+          <summary>Limites e caminhos avançados</summary>
+          <div class="form-grid">
+            <label>Pasta L2<input name="l2_directory" required /></label
+            ><label
+              >Pasta de teste<input name="test_directory" required /></label
+            ><label
+              >Espaço livre mínimo (GiB)<input
+                type="number"
+                name="min_free_gib"
+                min="1" /></label
+            ><label
+              >Máximo de ficheiros eliminados por origem<input
+                type="number"
+                name="max_delete_files"
+                min="1" /></label
+            ><label
+              >Máximo eliminado por origem (GiB)<input
+                type="number"
+                name="max_delete_gib"
+                min="1"
+            /></label>
+          </div>
+        </details>
+        <p id="form-error" class="form-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" id="pair" class="secondary">
+            Ligar ao Home Assistant</button
+          ><button type="submit" class="primary">Guardar definições</button>
+        </div>
+        <div id="pairing" hidden>
+          <p class="help">
+            Na integração Backup Steward, indica o endereço interno da app na
+            porta 8100 e esta chave. Não a partilhes.
+          </p>
+          <input
+            id="pair-token"
+            type="password"
+            readonly
+            aria-label="Chave da integração"
+          /><button type="button" id="copy-token" class="secondary">
+            Copiar chave
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="confirm">
+      <div class="dialog-heading">
+        <h2 id="confirm-title">Confirmar execução</h2>
+      </div>
+      <p id="confirm-description"></p>
+      <div class="dialog-actions">
+        <button id="cancel-confirm" class="secondary">Cancelar</button
+        ><button id="accept-confirm" class="primary">Continuar</button>
+      </div>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <script src="static/app.js"></script>
+  </body>
+</html>

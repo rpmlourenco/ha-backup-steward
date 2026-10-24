@@ -1,0 +1,14 @@
+{
+  "title": "HA Backup Steward",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Backup Steward",
+        "description": "Use the app's internal hostname and port 8100. Copy the pairing key from the app's settings. The app exclusively manages the schedule.",
+        "data": {"url": "App URL", "token": "Pairing key"}
+      }
+    },
+    "error": {"cannot_connect": "Cannot connect to the app", "invalid_auth": "Invalid pairing key", "invalid_url": "Use an HTTP(S) origin without credentials, query or path"},
+    "abort": {"already_configured": "This app instance is already configured"}
+  }
+}

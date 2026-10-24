@@ -1,0 +1,19 @@
+run:
+  name: Run a backup or verification
+  description: Request a manual operation. The app exclusively owns the schedule.
+  fields:
+    entry_id:
+      name: Integration
+      required: true
+      selector:
+        config_entry:
+          integration: backup_steward
+    mode:
+      name: Operation
+      default: backup
+      selector:
+        select:
+          options:
+            - backup
+            - backup_checksum
+            - checksum

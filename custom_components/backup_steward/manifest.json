@@ -1,0 +1,12 @@
+{
+  "domain": "backup_steward",
+  "name": "HA Backup Steward",
+  "codeowners": ["@rpmlourenco"],
+  "config_flow": true,
+  "documentation": "https://github.com/rpmlourenco/ha-backup-steward",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/rpmlourenco/ha-backup-steward/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
