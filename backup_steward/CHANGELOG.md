@@ -1,3 +1,9 @@
+# 0.1.3 — Explicit disk topology during safe removal
+
+- Request explicit tree output from lsblk when validating a dedicated destination disk. PATH/TYPE/UUID JSON otherwise returns a flat list, causing valid one-partition disks to be rejected.
+- Preserve UUID, dedicated-partition and final SCSI flush checks. Invalid layouts still block before sync, unmount or removal.
+- Add regression coverage for real flat/tree output and rejection of empty, multiple, wrong-UUID or wrong-type partitions.
+
 # 0.1.2 — Console logs, native-job permission and recovery presentation
 
 - Write concise timestamped startup, schedule, phase, outcome and recovery messages to the Supervisor Log tab.

@@ -25,3 +25,9 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
 - Official Home Assistant 2026.10.3 smoke passes, including recovery sensor transitions from a running job to an interrupted job needing cleanup.
 - The aarch64 app image builds successfully. No real disks, host D-Bus or production HA configuration are mounted into these tests.
 - The installed pilot's HTTP 403 was traced to the Supervisor `backup` role rejecting `/jobs/<uuid>`. This release requests `manager` and checks access before powering the destination. Hardware recovery and a complete L2/L3 run remain manual pilot acceptance steps.
+
+## 0.1.3 follow-up
+
+- 63 isolated tests, the official Home Assistant 2026.10.3 smoke test and the ARM64 image build pass.
+- Read-only inspection of the actual HDD confirmed that PATH/TYPE/UUID output is flat without `--tree`, and correctly nested with it. The disk has one ext4 partition with the configured UUID. The failed 0.1.2 recovery stopped before unmount; no disk operation or power change was performed by these diagnostics.
+- Regression tests model that exact lsblk behavior and preserve rejection of invalid layouts before sync, unmount or kernel removal. Hardware safe-removal acceptance remains pending.

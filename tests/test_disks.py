@@ -26,6 +26,16 @@ class DiskTests(unittest.IsolatedAsyncioTestCase):
             if args[:3] == ("lsblk", "-ndo", "TYPE"):
                 return "disk"
             if args[:2] == ("lsblk", "--json"):
+                # Match real lsblk: PATH without --tree has no children.
+                if "--tree" not in args:
+                    return json.dumps(
+                        {
+                            "blockdevices": [
+                                {"path": "/dev/sdb", "type": "disk"},
+                                {"path": "/dev/sdb1", "uuid": "fixture-uuid", "type": "part"},
+                            ]
+                        }
+                    )
                 return json.dumps(
                     {"blockdevices": [{"children": [{"uuid": "fixture-uuid", "type": "part"}]}]}
                 )
@@ -53,6 +63,34 @@ class DiskTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_final_kernel_flush_confirmation_allows_removal(self):
         await self.removal_fixture("sd 1:0:0:0: [sdb] Synchronizing SCSI cache")
+
+    async def test_invalid_partition_layout_blocks_before_sync_unmount_or_detach(self):
+        for children in (
+            [],
+            [{"uuid": "fixture-uuid", "type": "part"}, {"uuid": "other", "type": "part"}],
+            [{"uuid": "wrong-uuid", "type": "part"}],
+            [{"uuid": "fixture-uuid", "type": "crypt"}],
+        ):
+            with self.subTest(children=children):
+                host = AsyncMock()
+                disks = Disks(dict(DEFAULTS, destination_uuid="fixture-uuid"), host)
+                disks.journal_root = "/var/log/journal"
+                disks.mounted_on_host = AsyncMock(return_value=True)
+                disks.validate_destination = AsyncMock(return_value="/dev/sdb1")
+                with (
+                    patch(
+                        "steward.disks.command",
+                        new_callable=AsyncMock,
+                        side_effect=["sdb", "disk", json.dumps({"blockdevices": [{"children": children}]})],
+                    ),
+                    patch("steward.disks.os.sync") as sync,
+                    patch.object(Path, "write_text") as detach,
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "dedicated backup partition"):
+                        await disks.safe_remove()
+                host.stop.assert_not_awaited()
+                sync.assert_not_called()
+                detach.assert_not_called()
 
     async def test_persistent_host_journal_is_selected_explicitly(self):
         disks = Disks(DEFAULTS, AsyncMock())

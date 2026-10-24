@@ -261,7 +261,9 @@ class Disks:
         disk = Path("/dev") / parent
         if await command("lsblk", "-ndo", "TYPE", disk) != "disk":
             raise RuntimeError("Destination parent is not a disk")
-        layout = json.loads(await command("lsblk", "--json", "-o", "PATH,TYPE,UUID", disk))
+        # JSON children are only emitted when tree output is explicitly requested
+        # (or NAME is selected). PATH alone otherwise produces a flat list.
+        layout = json.loads(await command("lsblk", "--json", "--tree", "-o", "PATH,TYPE,UUID", disk))
         children = layout["blockdevices"][0].get("children", [])
         # Dedicated backup disk only: never remove a disk with other partitions or layered storage.
         if (
