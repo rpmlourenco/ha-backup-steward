@@ -56,3 +56,11 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
 - A real rclone 1.75.1 fixture with the exact production checksum flags returned 0 for identical files and 1 with sha256 differ for changed content of the same size. The new adapter captured both the reason and affected file immediately. Only temporary isolated files were used.
 - The original production failure's stderr was discarded by 0.1.6 and cannot be reconstructed. Read-only size/name comparisons currently match all three real source/mirror trees; this does not establish checksum equality or the cause of the original failure.
 - No new full checksum, copy, retention or hardware operation was initiated by these changes. The real destination remains in the user-opened manual session until the user closes it.
+
+## 0.1.8 follow-up
+
+- 96 isolated tests pass, including real rclone 1.75.1 temporary-file checks: differing hashes on two origins followed by a successful third origin, individual missing files, accumulated cross-origin ceiling, unavailable trees, I/O errors, deduplication across overlapping checks, incomplete-area rejection and bounded samples.
+- A live fake rclone subprocess emits an error and waits 30 seconds; reaching the limit terminates it within the five-second test deadline. Aggregate integrity failure preserves previous success/checksum timestamps, blocks L3 history expiry, notifies once and performs safe cleanup through mocked hardware.
+- Authenticated API report persistence and secret redaction pass. Official Home Assistant 2026.10.3 smoke passes with all 17 entities and the new Status report attributes.
+- The ARM64 app image builds. Local browser checks pass for error overview, threshold/unchecked presentation, manual controls, desktop/mobile layouts and no JavaScript exceptions or horizontal overflow.
+- All new execution checks use temporary files and fake APIs/hardware. No production backup, mount, power action or full verification was started for this implementation. USB transport diagnosis is a separate follow-up.

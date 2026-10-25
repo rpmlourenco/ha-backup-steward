@@ -40,6 +40,26 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("never-expose-this", text)
         self.assertNotIn(self.state.identity["api_token"], text)
 
+    async def test_integrity_report_survives_reload_and_authenticated_status(self):
+        from steward.integrity import IntegrityFailure, IntegrityRun
+
+        report_run = IntegrityRun(1000, lambda report: self.state.update(integrity=report))
+        area = report_run.plan("/media/source", "/media/target/source", "sha256")
+        report_run.begin(area)
+        report_run.line(area, "* never-expose-this.flac")
+        report_run.end(area)
+        with self.assertRaises(IntegrityFailure):
+            report_run.finish()
+        reloaded = State(Path(self.temp.name))
+        self.assertEqual(reloaded.data["integrity"]["status"], "failed")
+        response = await self.client.get("/v1/status", headers=self.auth())
+        text = await response.text()
+        self.assertNotIn("never-expose-this", text)
+        report = (await response.json())["state"]["integrity"]
+        self.assertEqual(report["error_count"], 1)
+        self.assertEqual(report["areas"][0]["status"], "failed")
+        self.assertTrue(report["complete"])
+
     async def test_active_disk_does_not_report_recovery_during_a_running_job(self):
         self.state.update(state="running", needs_cleanup=True)
         await self.engine.lock.acquire()

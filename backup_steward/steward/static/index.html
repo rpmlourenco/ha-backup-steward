@@ -94,6 +94,13 @@
             aguardam enquanto estiver aberto.
           </p>
         </section>
+        <section id="integrity-report" class="card journey integrity-report" hidden aria-labelledby="integrity-title">
+          <h2 id="integrity-title">Integridade das origens</h2>
+          <p id="integrity-summary" class="subtitle"></p>
+          <table class="integrity-table"><thead><tr><th>Origem / destino</th><th>Verificação</th><th>Resultado</th><th>Erros</th></tr></thead><tbody id="integrity-areas"></tbody></table>
+          <ul id="integrity-samples" class="integrity-samples"></ul>
+          <p class="help">Até 8 exemplos de erros. Os resultados de todas as origens ficam no resumo.</p>
+        </section>
         <section class="metrics">
           <article class="card metric">
             <span class="metric-icon blue"
@@ -320,6 +327,8 @@
         </fieldset>
         <details>
           <summary>Limites e caminhos avançados</summary>
+          <label>Limite global de erros de integridade<input type="number" name="integrity_error_limit" min="1" max="1000000" required /></label>
+          <p class="help">Acumulado entre todas as origens e verificações. Ao atingir o limite, a app pára a verificação e fecha o destino em segurança.</p>
           <div class="form-grid">
             <label>Pasta L2<input name="l2_directory" required /></label
             ><label

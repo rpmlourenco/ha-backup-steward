@@ -4,7 +4,7 @@
 
 Encrypted Home Assistant backups, verified offline copies, and safe disk shutdown — packaged as one app with a lightweight companion integration.
 
-> **Experimental 0.1.7.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
+> **Experimental 0.1.8.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
 
 ![Backup Steward interface](docs/images/overview.png)
 
@@ -49,6 +49,7 @@ Configuration is validated in app settings. Supervisor options bootstrap a new i
 | Full checksum | First Sunday of each month; weekly/manual alternatives |
 | L2 retention | 3 completed backups, configurable |
 | L3 history | 30 days |
+| Global integrity error ceiling | 1,000 distinct affected files / failed checks |
 | Free-space floor | 100 GiB on destination |
 | Sync deletion ceiling | 1,000 files / 100 GiB per source |
 | Missing-source guard | Refuse a drop over 20% when mirror has at least 20 files |
@@ -77,6 +78,14 @@ A failed or missed full checksum remains due until a successful production verif
 **`80-local-media.rules` stays unchanged.** NASRUI automount remains owned by that rule. The app validates it and never mounts/unmounts the source disk. Only the configured offline destination is managed by the app.
 
 The FileBrowser startup hook and any unrelated packaged applications are out of scope. Existing backup filenames remain restorable using their original key; the new app cannot recover a lost key. Store the encryption secret/emergency kit somewhere accessible without HA.
+
+### Integrity overview
+
+Integrity checks continue across configured source/mirror pairs after differences, missing files or read errors. The app shows each check as passed, failed, interrupted or not checked, plus a global count and up to eight example files. File-size checks are explicitly distinguished from SHA-256 checks. The integration Status sensor exposes the same per-area results as attributes.
+
+`integrity_error_limit` (advanced settings, default 1,000) is shared by file-size, L2 archive and full SHA-256 checks during one execution. A file affected in overlapping checks counts once globally; each check still has its own count. An unavailable tree or command failure without a file-level report counts as a failed check. At the limit, the current rclone process is stopped and normal safe cleanup runs. No retry or automatic repair is performed.
+
+Any integrity error leaves the execution failed, preserves the last successful backup/checksum timestamps and skips L3 history expiry. The disk is still closed safely when possible. Actual copy/sync failures, lost disk identity, unsafe paths and other safety failures continue to stop the workflow immediately.
 
 ## Status and recovery
 

@@ -11,6 +11,7 @@ import stat
 import tarfile
 
 from . import telemetry
+from .integrity import IntegrityFailure, IntegrityRun
 
 
 ARCHIVE = re.compile(r"steward_l2_\d{8}T\d{6}Z_[a-f0-9]{8}\.tar")
@@ -101,9 +102,9 @@ def count_files(root):
     return total
 
 
-async def command(*args, timeout=120):
+async def command(*args, timeout=120, integrity=None):
     if Path(args[0]).name == "rclone":
-        return await rclone_command(args, timeout)
+        return await rclone_command(args, timeout, integrity)
     process = await asyncio.create_subprocess_exec(
         *map(str, args),
         stdout=asyncio.subprocess.PIPE,
@@ -133,7 +134,7 @@ async def stop_process(process):
             await process.wait()
 
 
-async def rclone_command(args, timeout):
+async def rclone_command(args, timeout, integrity=None):
     args = list(map(str, args))
     # Parse structured errors as they arrive. INFO permits periodic statistics;
     # successful per-file messages and arbitrary JSON fields are never relayed.
@@ -144,6 +145,8 @@ async def rclone_command(args, timeout):
             args.extend((flag, value))
     if "--use-json-log" not in args:
         args.append("--use-json-log")
+    if integrity is not None:
+        args.extend(("--combined", "-", "--retries", "1"))
     process = await asyncio.create_subprocess_exec(
         *args,
         stdout=asyncio.subprocess.PIPE,
@@ -182,7 +185,15 @@ async def rclone_command(args, timeout):
             details.append(detail)
             telemetry.event(f"rclone: {detail}", level=40)
 
-    readers = [asyncio.create_task(process.stdout.read()), asyncio.create_task(read_diagnostics())]
+    async def read_report():
+        while line := await process.stdout.readline():
+            integrity(line.decode("utf-8", errors="replace"))
+        return b""
+
+    readers = [
+        asyncio.create_task(read_report() if integrity is not None else process.stdout.read()),
+        asyncio.create_task(read_diagnostics()),
+    ]
     try:
         async with asyncio.timeout(timeout):
             output, _ = await asyncio.gather(*readers)
@@ -207,9 +218,96 @@ async def rclone_command(args, timeout):
 
 
 class Copier:
-    def __init__(self, cfg, disks, on_event=None):
+    def __init__(self, cfg, disks, on_event=None, on_report=None):
         self.cfg, self.disks = cfg, disks
         self.on_event = on_event or (lambda stage, message: telemetry.event(f"{stage}: {message}"))
+        self.integrity = IntegrityRun(cfg["integrity_error_limit"], on_report)
+
+    def plan_checks(self, include_copy=True, include_full=True, test=False):
+        if include_copy:
+            for source, target in self.pairs(test):
+                self.integrity.plan(source, target, "size")
+            source, target = self.archive_pair(test)
+            self.integrity.plan(source, target, "l2_sha256")
+        if include_full:
+            for source, target in self.pairs(test):
+                self.integrity.plan(source, target, "sha256")
+        self.integrity.publish()
+
+    def archive_pair(self, test):
+        c = self.cfg
+        source = Path(c["source_mount"]) / (c["test_directory"] + "/level-2" if test else c["l2_directory"])
+        target = self.pairs(test)[0][1] if test else self.pairs()[0][1] / c["l2_directory"]
+        return source, target
+
+    def abort_checks(self):
+        self.integrity.abort()
+
+    def finish_checks(self):
+        report = self.integrity.report()
+        self.on_event(
+            "integrity_summary",
+            f"Resumo: {report['error_count']} erro(s) globais em {len(report['areas'])} verificações",
+        )
+        return self.integrity.finish()
+
+    async def verify(self, source, target, kind, test=False):
+        area = self.integrity.plan(source, target, kind)
+        self.integrity.begin(area)
+        await self.disks.validate_source()
+        await self.disks.validate_destination()
+        if not source.is_dir() or not target.is_dir():
+            self.integrity.problem(area, None, "unavailable", "Origem ou destino ausente")
+            self.integrity.end(area, failed=True)
+            self.on_event(
+                "integrity_area_failed", f"{kind}: {source}; origem ou destino ausente; a continuar"
+            )
+            return
+        confined(source, source)
+        confined(target, Path(self.cfg["destination_mount"]))
+        try:
+            if not count_files(source):
+                self.integrity.problem(area, None, "unavailable", "Origem vazia; verificação recusada")
+                self.integrity.end(area, failed=True)
+                self.on_event("integrity_area_failed", f"{kind}: {source}; origem vazia; a continuar")
+                return
+            count_files(target)
+        except OSError as error:
+            self.integrity.problem(area, None, "read_error", type(error).__name__)
+            self.integrity.end(area, failed=True)
+            self.on_event("integrity_area_failed", f"{kind}: {source}; falha de leitura; a continuar")
+            return
+        args = ["rclone", "--config", "/dev/null", "check", source, target, "--checkers", "2"]
+        args += ["--size-only"] if kind == "size" else ["--local-hashes", "sha256", "--checksum"]
+        if test and kind == "size":
+            args.append("--one-way")
+        try:
+            await command(*args, timeout=7 * 86400, integrity=lambda line: self.integrity.line(area, line))
+        except IntegrityFailure:
+            self.integrity.abort()
+            self.on_event(
+                "integrity_limit",
+                f"Limite global de {self.integrity.limit} erros atingido; a parar a verificação",
+            )
+            raise
+        except (RuntimeError, TimeoutError) as error:
+            if not area["errors"]:
+                self.integrity.problem(area, None, "operation_error", str(error) or type(error).__name__)
+            self.integrity.end(area, failed=True)
+            self.on_event(
+                "integrity_area_failed",
+                f"{kind}: {source}; {area['errors']} erro(s); a continuar nas restantes origens",
+            )
+        else:
+            self.integrity.end(area)
+            if area["errors"]:
+                self.on_event(
+                    "integrity_area_failed", f"{kind}: {source}; {area['errors']} erro(s); a continuar"
+                )
+            else:
+                self.on_event(
+                    "integrity_area_ok", f"{kind}: {source}; {area['checked']} ficheiros verificados"
+                )
 
     def pairs(self, test=False):
         c = self.cfg
@@ -268,56 +366,20 @@ class Copier:
                 ]
             await command(*args, timeout=7 * 86400)
             await self.disks.validate_destination()
-            check = base + ["check", str(source), str(target), "--size-only"]
-            if test:
-                check.append("--one-way")
-            await command(*check, timeout=7 * 86400)
-            self.on_event("l3_verified", f"Cópia e tamanhos confirmados: {source}")
-        source = Path(c["source_mount"]) / (c["test_directory"] + "/level-2" if test else c["l2_directory"])
-        destination = self.pairs(test)[0][1] if test else self.pairs()[0][1] / c["l2_directory"]
+            await self.verify(source, target, "size", test)
+            if not self.integrity.plan(source, target, "size")["errors"]:
+                self.on_event("l3_verified", f"Cópia e tamanhos confirmados: {source}")
+        source, destination = self.archive_pair(test)
         self.on_event("l2_archive_checksum", "A confirmar SHA-256 dos arquivos L2 entregues ao espelho")
-        await command(
-            "rclone",
-            "--config",
-            "/dev/null",
-            "check",
-            source,
-            destination,
-            "--local-hashes",
-            "sha256",
-            "--checksum",
-            timeout=86400,
-        )
+        await self.verify(source, destination, "l2_sha256", test)
 
     async def checksum(self, test=False):
+        self.plan_checks(include_copy=False, include_full=True, test=test)
         for source, destination in self.pairs(test):
             self.on_event("checksum_source", f"A verificar SHA-256: {source} → {destination}")
-            await self.disks.validate_source()
-            await self.disks.validate_destination()
-            confined(source, source)
-            confined(destination, Path(self.cfg["destination_mount"]))
-            if (
-                not source.is_dir()
-                or not destination.is_dir()
-                or not count_files(source)
-                or not count_files(destination)
-            ):
-                raise ValueError("Missing or empty checksum source or destination")
-            await command(
-                "rclone",
-                "--config",
-                "/dev/null",
-                "check",
-                source,
-                destination,
-                "--local-hashes",
-                "sha256",
-                "--checksum",
-                "--checkers",
-                "2",
-                timeout=7 * 86400,
-            )
-            self.on_event("checksum_verified", f"SHA-256 confirmado: {source}")
+            await self.verify(source, destination, "sha256", test)
+            if not self.integrity.plan(source, destination, "sha256")["errors"]:
+                self.on_event("checksum_verified", f"SHA-256 confirmado: {source}")
 
     def prune_history(self):
         root = confined(Path(self.cfg["destination_mount"]) / "history", Path(self.cfg["destination_mount"]))

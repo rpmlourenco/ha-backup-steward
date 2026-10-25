@@ -13,6 +13,7 @@ from .schedule import checksum_due
 from .storage import Copier, confined, prune_l2
 from .supervisor import APIError, JobFailed
 from . import telemetry
+from .integrity import IntegrityFailure
 
 
 class Engine:
@@ -60,7 +61,9 @@ class Engine:
             state = self.state
             host = self.host_factory(state.identity["instance_id"])
             disks = self.disks_factory(cfg, host)
-            copier = self.copier_factory(cfg, disks, state.event)
+            copier = self.copier_factory(
+                cfg, disks, state.event, lambda report: state.update(integrity=report)
+            )
             run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             checksum = mode != "backup" or checksum_due(
                 datetime.now(timezone.utc), cfg, state.data.get("last_checksum")
@@ -89,7 +92,9 @@ class Engine:
                     safe_to_power_off=False,
                     backup_pending=False,
                     failure_stage=None,
+                    integrity=None,
                 )
+                copier.plan_checks(include_copy=mode != "checksum", include_full=checksum, test=test)
                 state.event("preflight", "A validar permissões, ausência de concorrência, discos e journal")
                 await self.api.preflight(cfg)
                 await host.acquire()
@@ -164,9 +169,10 @@ class Engine:
                 if checksum:
                     state.event("checksum", "A comparar os checksums SHA-256 completos")
                     await copier.checksum(test)
-                    # A test checksum cannot satisfy the production checksum calendar.
-                    if not test:
-                        state.update(last_checksum=datetime.now(timezone.utc).isoformat())
+                copier.finish_checks()
+                # A partial or failed report never advances the production calendar.
+                if checksum and not test:
+                    state.update(last_checksum=datetime.now(timezone.utc).isoformat())
                 if mode != "checksum" and not test:
                     await disks.validate_destination()
                     await asyncio.to_thread(copier.prune_history)
@@ -185,6 +191,7 @@ class Engine:
                     last_success=datetime.now(timezone.utc).isoformat(),
                 )
             except asyncio.CancelledError:
+                copier.abort_checks()
                 state.update(
                     state="interrupted",
                     stage="recovery_required",
@@ -193,13 +200,14 @@ class Engine:
                 )
                 raise
             except Exception as error:
+                copier.abort_checks()
                 if isinstance(error, JobFailed):
                     backup_pending = False
                     state.update(backup_pending=False)
                 # Only our already-sanitized application errors are exposed; never raw HTTP/process output.
                 detail = (
                     str(error)
-                    if type(error) in (RuntimeError, ValueError, APIError, JobFailed)
+                    if type(error) in (RuntimeError, ValueError, APIError, JobFailed, IntegrityFailure)
                     else type(error).__name__
                 )
                 for secret in (

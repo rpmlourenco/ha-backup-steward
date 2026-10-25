@@ -123,6 +123,32 @@ sys.exit({code})
         self.assertEqual(len(logs), 9)
         self.assertIn("mais 4", logs[-1])
 
+    async def test_integrity_limit_terminates_live_process_without_waiting_for_completion(self):
+        from steward.integrity import IntegrityFailure, IntegrityRun
+
+        executable = self.root / "rclone"
+        executable.write_text(
+            f"""#!{sys.executable}
+import sys,time
+print('* bad.bin', flush=True)
+time.sleep(30)
+""",
+            encoding="utf-8",
+        )
+        executable.chmod(0o700)
+        run = IntegrityRun(1)
+        area = run.plan("/media/source", "/media/target/source", "sha256")
+        with patch.dict(os.environ, {"PATH": str(self.root) + os.pathsep + os.environ.get("PATH", "")}):
+            with self.assertRaises(IntegrityFailure):
+                await asyncio.wait_for(
+                    command(
+                        "rclone", "check", "source", "target", integrity=lambda line: run.line(area, line)
+                    ),
+                    5,
+                )
+        self.assertTrue(run.report()["limit_reached"])
+        self.assertEqual(run.report()["error_count"], 1)
+
     async def test_timeout_stops_the_process(self):
         with self.fake([], wait=True):
             with self.assertRaises(TimeoutError):

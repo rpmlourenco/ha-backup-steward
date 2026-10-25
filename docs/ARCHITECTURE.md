@@ -12,6 +12,7 @@ One repository contains two installable packages: a Supervisor app (`backup_stew
 | `supervisor.py` | Native backup jobs, Core states/power and streamed delivery |
 | `disks.py` | Host systemd D-Bus, shared legacy lock, UUID mounts, final SCSI proof |
 | `storage.py` | Confined files, archive identity/retention, rclone copy/check/history |
+| `integrity.py` | Global distinct-file error budget, per-check results and bounded examples |
 | `engine.py` | Serialized workflow and recovery, policy snapshot per execution |
 | `server.py` | Supervisor-ingress UI and separately authenticated integration API |
 
@@ -63,3 +64,9 @@ Port 8099 serves the UI only to the configured Supervisor ingress peer, default 
 | `POST /v1/pair` | Ingress only, explicit pairing-key reveal |
 
 The API has no arbitrary shell, filesystem path, restore, reboot, format or service-call endpoint. Integration HTTP redirects are rejected so its authorization header cannot follow a redirect to another host.
+
+## Aggregate integrity checks
+
+The engine plans size/L2/full-check areas before work, so interrupted and untouched areas remain distinguishable. Each rclone check streams its `--combined -` file-level report independently of structured stderr diagnostics. Repeated error logs do not consume the budget. A canonical source-file identity deduplicates overlaps such as L2 archive hashing followed by hashing the whole source. Command/tree failures without file-level results consume one failed-check identity.
+
+Below the global limit, a failed check is recorded and subsequent pairs are verified. `finish_checks` rejects any error or unfinished area before success timestamps and L3 history expiry. Threshold exceptions terminate and await the active rclone process before the engine attempts safe disk closure. Read/availability failures are aggregated; invalid UUIDs, unsafe paths and copy/sync failures remain immediate workflow failures. Reports persist atomically with bounded areas and at most eight redacted example paths; successful per-file names are not retained.

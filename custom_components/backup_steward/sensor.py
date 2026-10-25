@@ -41,4 +41,12 @@ class StewardSensor(StewardEntity, SensorEntity):
         if self.key != "state":
             return None
         state = self.coordinator.data["state"]
-        return {k: state.get(k) for k in ("run_id", "mode", "execution_mode", "error", "failure_stage")}
+        attributes = {k: state.get(k) for k in ("run_id", "mode", "execution_mode", "error", "failure_stage")}
+        report = state.get("integrity") or {}
+        attributes.update(
+            integrity_status=report.get("status"),
+            integrity_errors=report.get("error_count"),
+            integrity_limit_reached=report.get("limit_reached"),
+            integrity_areas=report.get("areas", []),
+        )
+        return attributes

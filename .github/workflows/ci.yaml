@@ -15,9 +15,12 @@ jobs:
           python-version: '3.14'
       - run: python -m pip install -e . ruff
       - run: ruff check .
-      - run: python -m unittest discover -s tests -v
-      - run: python -m compileall -q custom_components backup_steward/steward
       - run: docker build -t ha-backup-steward:test backup_steward
+      - run: >-
+          docker run --rm -v "$PWD:/workspace:ro" -w /workspace
+          -e PYTHONPATH=backup_steward ha-backup-steward:test
+          python -B -m unittest discover -s tests -v
+      - run: python -m compileall -q custom_components backup_steward/steward
   integration:
     runs-on: ubuntu-latest
     steps:

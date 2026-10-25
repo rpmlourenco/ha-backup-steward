@@ -1,3 +1,10 @@
+# 0.1.8 — Global integrity overview
+
+- Continue verification across source/mirror pairs after integrity differences, missing files and read errors, collecting a complete overview instead of stopping at the first failed pair.
+- Apply one configurable global limit (default 1,000) across size, L2 archive and full SHA-256 checks, counting overlapping affected files once. Stop the active process at the limit and close the destination safely.
+- Show per-check results, unverified areas, global counts and bounded examples in the app; expose results through the integration Status attributes.
+- Failed or incomplete integrity never advances the successful checksum calendar or permits L3 history expiry. Copy/sync and disk/path safety failures remain fail-fast. Preserve error-only notifications and existing settings/keys.
+
 # 0.1.7 — Live rclone diagnostics
 
 - Relay structured rclone errors immediately with the affected file and a safe reason, rather than discarding stderr and retaining only an exit code.

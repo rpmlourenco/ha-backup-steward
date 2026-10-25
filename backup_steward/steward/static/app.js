@@ -177,6 +177,25 @@ function render() {
     );
   $("retention-note").textContent =
     `Conserva ${current.daily_retention_days} backups L2. Com uma cópia diária, isso representa cerca de ${current.daily_retention_days} dias de recuperação. O histórico L3 tem uma retenção própria.`;
+  const integrity = s.integrity;
+  $("integrity-report").hidden = !integrity;
+  if (integrity) {
+    const status = {running: "Verificação em curso", passed: "Verificação concluída", failed: "Verificação concluída com erros", aborted: "Verificação incompleta"}[integrity.status] || integrity.status;
+    $("integrity-summary").textContent = `${status} · ${integrity.error_count} erro(s) globais · limite ${integrity.error_limit}${integrity.limit_reached ? " — limite atingido" : ""}`;
+    const body = $("integrity-areas"); body.replaceChildren();
+    for (const area of integrity.areas || []) {
+      const row = document.createElement("tr");
+      const statusLabel = {pending: "Não verificado", running: "Em curso", success: "Íntegro", failed: "Com erros", stopped: "Interrompido"}[area.status] || area.status;
+      for (const value of [area.kind === "l2_sha256" ? `Arquivos L2 → ${area.destination}` : `${area.source} → ${area.destination}`, {size: "Tamanho", l2_sha256: "SHA-256 L2", sha256: "SHA-256 integral"}[area.kind] || area.kind, area.status === "success" && area.kind === "size" ? "Tamanhos iguais" : statusLabel, area.errors]) {
+        const cell = document.createElement("td"); cell.textContent = value; row.append(cell);
+      }
+      body.append(row);
+    }
+    const samples = $("integrity-samples"); samples.replaceChildren();
+    for (const sample of integrity.samples || []) {
+      const item = document.createElement("li"); item.textContent = `${sample.source}: ${sample.path || "Verificação indisponível"} — ${{different: "Conteúdo diferente", missing_on_destination: "Falta no destino", missing_on_source: "Falta na origem", read_error: "Erro de leitura", unavailable: "Origem ou destino ausente", operation_error: "Falha na verificação"}[sample.category] || "Erro de integridade"}`; samples.append(item);
+    }
+  }
   const list = $("events");
   list.replaceChildren();
   for (const event of (s.events || []).slice(-7).reverse()) {

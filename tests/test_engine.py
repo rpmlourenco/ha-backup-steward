@@ -246,6 +246,28 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.copier.prune_history.assert_not_called()
         self.assertIsNone(self.state.data["last_checksum"])
 
+    async def test_aggregate_integrity_failure_closes_safely_without_advancing_success(self):
+        from steward.integrity import IntegrityFailure
+
+        self.engine.cfg["execution_mode"] = "production"
+        previous = "2026-10-01T04:00:00+00:00"
+        self.state.update(last_checksum=previous, last_success=previous)
+        self.copier.finish_checks.side_effect = IntegrityFailure(
+            dict(complete=True, limit_reached=False, error_count=2)
+        )
+        with patch("steward.engine.prune_l2", return_value=[]):
+            await self.run_engine("backup_checksum")
+        self.copier.checksum.assert_awaited_once()
+        self.copier.finish_checks.assert_called_once()
+        self.copier.prune_history.assert_not_called()
+        self.disks.safe_remove.assert_awaited_once()
+        self.assertEqual(self.api.power.call_args.args, ("switch.disk", False))
+        self.assertEqual(self.state.data["state"], "failed")
+        self.assertEqual(self.state.data["last_checksum"], previous)
+        self.assertEqual(self.state.data["last_success"], previous)
+        self.assertFalse(self.state.data["needs_cleanup"])
+        self.api.notify.assert_awaited_once()
+
     async def test_test_checksum_does_not_satisfy_production_calendar(self):
         await self.run_engine("backup_checksum")
         self.copier.checksum.assert_awaited_once()
