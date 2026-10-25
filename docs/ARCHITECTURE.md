@@ -57,7 +57,7 @@ Port 8099 serves the UI only to the configured Supervisor ingress peer, default 
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /v1/status` | Bounded public state, policy summary and next run |
-| `POST /v1/run` | `backup`, `backup_checksum` or `checksum`; returns 202 |
+| `POST /v1/run` | `backup`, `backup_checksum` or `checksum`; optional exact configured `source` only for checksum; returns 202 |
 | `POST /v1/recover` | Start serialized recovery |
 | `POST /v1/destination` | Strict `action: mount` or `action: shutdown`; serialized manual destination control, returns 202 |
 | `GET/PUT /v1/config` | Ingress only, secrets omitted from reads |
@@ -70,3 +70,5 @@ The API has no arbitrary shell, filesystem path, restore, reboot, format or serv
 The engine plans size/L2/full-check areas before work, so interrupted and untouched areas remain distinguishable. Each rclone check streams its `--combined -` file-level report independently of structured stderr diagnostics. Repeated error logs do not consume the budget. A canonical source-file identity deduplicates overlaps such as L2 archive hashing followed by hashing the whole source. Command/tree failures without file-level results consume one failed-check identity.
 
 Below the global limit, a failed check is recorded and subsequent pairs are verified. `finish_checks` rejects any error or unfinished area before success timestamps and L3 history expiry. Threshold exceptions terminate and await the active rclone process before the engine attempts safe disk closure. Read/availability failures are aggregated; invalid UUIDs, unsafe paths and copy/sync failures remain immediate workflow failures. Reports persist atomically with bounded areas and at most eight redacted example paths; successful per-file names are not retained.
+
+Manual checksum scope is validated before task creation and again against the run configuration snapshot. Only configured roots are accepted; test mode maps the main root to its isolated test tree. The report plans only selected pairs. Scoped success never advances the global checksum/success dates, and the scheduler never supplies a scope. The UI and Status attributes retain the selected root so partial results cannot be confused with global verification.

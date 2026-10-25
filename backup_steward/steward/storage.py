@@ -12,6 +12,7 @@ import tarfile
 
 from . import telemetry
 from .integrity import IntegrityFailure, IntegrityRun
+from .config import verification_source
 
 
 ARCHIVE = re.compile(r"steward_l2_\d{8}T\d{6}Z_[a-f0-9]{8}\.tar")
@@ -223,15 +224,15 @@ class Copier:
         self.on_event = on_event or (lambda stage, message: telemetry.event(f"{stage}: {message}"))
         self.integrity = IntegrityRun(cfg["integrity_error_limit"], on_report)
 
-    def plan_checks(self, include_copy=True, include_full=True, test=False):
+    def plan_checks(self, include_copy=True, include_full=True, test=False, source=None):
         if include_copy:
-            for source, target in self.pairs(test):
-                self.integrity.plan(source, target, "size")
-            source, target = self.archive_pair(test)
-            self.integrity.plan(source, target, "l2_sha256")
+            for origin, target in self.pairs(test):
+                self.integrity.plan(origin, target, "size")
+            origin, target = self.archive_pair(test)
+            self.integrity.plan(origin, target, "l2_sha256")
         if include_full:
-            for source, target in self.pairs(test):
-                self.integrity.plan(source, target, "sha256")
+            for origin, target in self.verification_pairs(test, source):
+                self.integrity.plan(origin, target, "sha256")
         self.integrity.publish()
 
     def archive_pair(self, test):
@@ -373,9 +374,18 @@ class Copier:
         self.on_event("l2_archive_checksum", "A confirmar SHA-256 dos arquivos L2 entregues ao espelho")
         await self.verify(source, destination, "l2_sha256", test)
 
-    async def checksum(self, test=False):
-        self.plan_checks(include_copy=False, include_full=True, test=test)
-        for source, destination in self.pairs(test):
+    def verification_pairs(self, test=False, source=None):
+        verification_source(self.cfg, "checksum", source)
+        pairs = self.pairs(test)
+        if source is None:
+            return pairs
+        if test:
+            return pairs[:1]
+        return [(origin, target) for origin, target in pairs if str(origin) == source]
+
+    async def checksum(self, test=False, source=None):
+        self.plan_checks(include_copy=False, include_full=True, test=test, source=source)
+        for source, destination in self.verification_pairs(test, source):
             self.on_event("checksum_source", f"A verificar SHA-256: {source} → {destination}")
             await self.verify(source, destination, "sha256", test)
             if not self.integrity.plan(source, destination, "sha256")["errors"]:

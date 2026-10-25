@@ -56,7 +56,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if not target or target.domain != DOMAIN or not getattr(target, "runtime_data", None):
                 raise ServiceValidationError("Choose a loaded Backup Steward integration")
             try:
-                await target.runtime_data.api.run(call.data["mode"])
+                if "source" in call.data:
+                    if call.data["mode"] != "checksum":
+                        raise ServiceValidationError("Source selection requires checksum mode")
+                    await target.runtime_data.api.run(call.data["mode"], source=call.data["source"])
+                else:
+                    await target.runtime_data.api.run(call.data["mode"])
             except (CannotConnect, InvalidAuth) as error:
                 raise ServiceValidationError(
                     "The app could not accept the operation; inspect its status"
@@ -70,6 +75,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             schema=vol.Schema(
                 {
                     vol.Required("entry_id"): str,
+                    vol.Optional("source"): str,
                     vol.Optional("mode", default="backup"): vol.In(["backup", "backup_checksum", "checksum"]),
                 }
             ),

@@ -4,7 +4,7 @@
 
 Encrypted Home Assistant backups, verified offline copies, and safe disk shutdown — packaged as one app with a lightweight companion integration.
 
-> **Experimental 0.1.8.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
+> **Experimental 0.1.9.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
 
 ![Backup Steward interface](docs/images/overview.png)
 
@@ -78,6 +78,14 @@ A failed or missed full checksum remains due until a successful production verif
 **`80-local-media.rules` stays unchanged.** NASRUI automount remains owned by that rule. The app validates it and never mounts/unmounts the source disk. Only the configured offline destination is managed by the app.
 
 The FileBrowser startup hook and any unrelated packaged applications are out of scope. Existing backup filenames remain restorable using their original key; the new app cannot recover a lost key. Store the encryption secret/emergency kit somewhere accessible without HA.
+
+### Verify one area
+
+**Verificar integridade** opens a selector with all areas or one exact configured source (for example NASRUI, immich or filebrowser). Choices are generated from configuration; no machine-specific area names are embedded in the code. Test mode offers only its separate test tree.
+
+The app verifies SHA-256 for the selected source and its mirror, with the same global error ceiling and safe destination lifecycle. It creates no backup and performs no retention. A successful single-area run preserves the last global success/checksum dates and cannot satisfy the scheduled full-check deadline. Scheduled backups and existing verification buttons still cover all areas.
+
+The authenticated run API and `backup_steward.run` action accept optional `source` for `mode: checksum`, using the exact configured source path. Omit `source` for all areas. Arbitrary paths and source selection for backup operations are rejected.
 
 ### Integrity overview
 

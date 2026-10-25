@@ -64,3 +64,11 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
 - Authenticated API report persistence and secret redaction pass. Official Home Assistant 2026.10.3 smoke passes with all 17 entities and the new Status report attributes.
 - The ARM64 app image builds. Local browser checks pass for error overview, threshold/unchecked presentation, manual controls, desktop/mobile layouts and no JavaScript exceptions or horizontal overflow.
 - All new execution checks use temporary files and fake APIs/hardware. No production backup, mount, power action or full verification was started for this implementation. USB transport diagnosis is a separate follow-up.
+
+## 0.1.9 follow-up
+
+- 105 isolated tests pass. New cases cover configured-source selection against real temporary rclone trees, excluded corrupt areas, single-area failures, separate test-tree mapping, unchanged all-source backup planning, strict request validation and dynamically advertised choices.
+- Engine tests verify that single-area success preserves global success/checksum timestamps, performs no backup/copy/retention, keeps safe cleanup and remains silent on success. Full checksum still advances the global checksum date. Invalid scopes are rejected before work begins.
+- Official Home Assistant 2026.10.3 smoke passes with scoped run action requests, invalid backup/scope rejection, Status scope attributes and the unchanged 17 entities.
+- ARM64 app build and local desktop/mobile browser checks pass. The selector generates choices from app status, sends a source only for single-area checks, resets to all areas for subsequent requests, remains hidden for backups, and cannot start work while busy.
+- No production operation or configuration change was performed. An already running production verification is unaffected by this local implementation.

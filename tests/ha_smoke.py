@@ -20,7 +20,7 @@ async def main():
     requests = []
     destination_requests = []
     data = {
-        "version": "0.1.8",
+        "version": "0.1.9",
         "busy": False,
         "mode": "test",
         "schedule_enabled": False,
@@ -105,6 +105,27 @@ async def main():
                     blocking=True,
                 )
                 assert requests == [{"mode": "backup_checksum"}], requests
+                await hass.services.async_call(
+                    "backup_steward",
+                    "run",
+                    {"entry_id": entry.entry_id, "mode": "checksum", "source": "/media/immich"},
+                    blocking=True,
+                )
+                assert requests[-1] == {"mode": "checksum", "source": "/media/immich"}, requests
+                from homeassistant.exceptions import ServiceValidationError
+
+                try:
+                    await hass.services.async_call(
+                        "backup_steward",
+                        "run",
+                        {"entry_id": entry.entry_id, "mode": "backup", "source": "/media/immich"},
+                        blocking=True,
+                    )
+                except ServiceValidationError:
+                    pass
+                else:
+                    raise AssertionError("Backup mode accepted verification-only scope")
+                assert len(requests) == 2, requests
                 states = hass.states.async_all()
                 assert len([s for s in states if s.entity_id.startswith("sensor.")]) >= 8
                 assert len([s for s in states if s.entity_id.startswith("button.")]) == 6
@@ -147,6 +168,7 @@ async def main():
                 await entry.runtime_data.coordinator.async_refresh()
                 await hass.async_block_till_done()
                 assert hass.states.get(recovery_entity).state == "on"
+                data["state"]["verification_source"] = "/media/immich"
                 data["state"]["integrity"] = {
                     "status": "failed",
                     "error_count": 2,
@@ -160,6 +182,7 @@ async def main():
                 await hass.async_block_till_done()
                 status_id = registry.async_get_entity_id("sensor", "backup_steward", "fixture-instance_state")
                 attributes = hass.states.get(status_id).attributes
+                assert attributes["verification_source"] == "/media/immich", attributes
                 assert attributes["integrity_status"] == "failed", attributes
                 assert attributes["integrity_errors"] == 2, attributes
                 assert attributes["integrity_areas"][1]["status"] == "success", attributes

@@ -38,8 +38,11 @@ class Client:
     async def status(self):
         return await self.request("GET", "status")
 
-    async def run(self, mode):
-        return await self.request("POST", "run", {"mode": mode})
+    async def run(self, mode, source=None):
+        body = {"mode": mode}
+        if source is not None:
+            body["source"] = source
+        return await self.request("POST", "run", body)
 
     async def recover(self):
         return await self.request("POST", "recover", {})

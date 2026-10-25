@@ -97,7 +97,7 @@ function render() {
             ? s.destination_manual
               ? "Fecho do destino em curso"
               : "Recuperação em curso"
-            : "Backup em curso"
+            : s.mode === "checksum" ? "Verificação em curso" : "Backup em curso"
         : labels[s.state] || s.state;
   $("status-badge").dataset.tone =
     current.mode === "observe" ? "observe" : s.state;
@@ -121,6 +121,11 @@ function render() {
         : current.busy
           ? "Podes acompanhar as etapas aqui. A app continua a trabalhar se reiniciares o Home Assistant."
           : "As cópias são verificadas antes de o disco offline ser desmontado e desligado.";
+  if (!recovery && !manual && s.mode === "checksum" && ["running", "success"].includes(s.state)) {
+    if (s.state === "success") $("status-label").textContent = s.verification_source ? "Área verificada" : "Integridade confirmada";
+    $("hero-title").textContent = current.busy ? "Estamos a verificar os teus dados." : "Verificação concluída.";
+    $("hero-description").textContent = `Área: ${s.verification_source || "Todas as origens"}. ${s.verification_source ? "Esta verificação parcial não substitui a verificação integral agendada." : "Verificação integral das origens configuradas."}`;
+  }
   $("banner").hidden =
     current.busy ||
     (!recovery && s.state !== "failed" && s.retention !== "failed");
@@ -181,7 +186,7 @@ function render() {
   $("integrity-report").hidden = !integrity;
   if (integrity) {
     const status = {running: "Verificação em curso", passed: "Verificação concluída", failed: "Verificação concluída com erros", aborted: "Verificação incompleta"}[integrity.status] || integrity.status;
-    $("integrity-summary").textContent = `${status} · ${integrity.error_count} erro(s) globais · limite ${integrity.error_limit}${integrity.limit_reached ? " — limite atingido" : ""}`;
+    $("integrity-summary").textContent = `${status} · ${s.verification_source || "Todas as áreas"} · ${integrity.error_count} erro(s) globais · limite ${integrity.error_limit}${integrity.limit_reached ? " — limite atingido" : ""}`;
     const body = $("integrity-areas"); body.replaceChildren();
     for (const area of integrity.areas || []) {
       const row = document.createElement("tr");
@@ -228,6 +233,20 @@ function translate(stage, fallback) {
 }
 function confirmOperation(mode) {
   pending = mode;
+  $("verification-scope").hidden = $("verification-scope-note").hidden = mode !== "checksum";
+  if (mode === "checksum") {
+    const select = $("verification-source");
+    select.replaceChildren();
+    const all = document.createElement("option");
+    all.value = ""; all.textContent = "Todas as áreas"; select.append(all);
+    for (const source of current.verification_sources || []) {
+      const option = document.createElement("option");
+      option.value = source;
+      const name = source.split("/").filter(Boolean).pop();
+      option.textContent = `${name.charAt(0).toUpperCase() + name.slice(1)} (${source})`;
+      select.append(option);
+    }
+  }
   $("confirm-title").textContent = operationLabels[mode];
   $("confirm-description").textContent =
     mode === "destination_mount"
@@ -239,7 +258,7 @@ function confirmOperation(mode) {
           : current.mode === "test"
             ? "A execução usará a área de teste separada e não aplicará retenção. Vai ligar o destino e criar ou verificar cópias reais."
             : mode === "checksum"
-              ? "Esta verificação lê as origens e o espelho por completo. Pode demorar várias horas. Não cria uma nova cópia."
+              ? "Escolhe todas as áreas ou apenas uma. A app verifica os ficheiros dessa seleção, liga e fecha o destino em segurança. Pode demorar várias horas. Não cria uma nova cópia."
               : "A app vai criar o L2, copiar os dados para L3 e fechar o disco em segurança. A política de retenção configurada será aplicada.";
   $("confirm").showModal();
 }
@@ -252,6 +271,7 @@ $("destination-shutdown").onclick = () =>
 $("cancel-confirm").onclick = () => $("confirm").close();
 $("accept-confirm").onclick = async () => {
   const mode = pending;
+  const source = mode === "checksum" ? $("verification-source").value : "";
   $("confirm").close();
   try {
     await api(
@@ -265,7 +285,7 @@ $("accept-confirm").onclick = async () => {
         ? { action: mode.replace("destination_", "") }
         : mode === "recover"
           ? {}
-          : { mode },
+          : source ? { mode, source } : { mode },
     );
     toast("Pedido aceite. Podes acompanhar a execução aqui.");
     await refresh();

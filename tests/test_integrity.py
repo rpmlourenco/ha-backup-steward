@@ -191,6 +191,49 @@ class RealRcloneIntegrityTests(unittest.IsolatedAsyncioTestCase):
             [a["status"] for a in caught.exception.report["areas"]], ["failed", "success", "success"]
         )
 
+    async def test_backup_planning_keeps_all_size_l2_and_full_checks(self):
+        copier = self.copier()
+        copier.plan_checks(include_copy=True, include_full=True)
+        areas = copier.integrity.report()["areas"]
+        self.assertEqual(len(areas), 7)
+        self.assertEqual(
+            [a["source"] for a in areas if a["kind"] == "sha256"],
+            [str(self.source), str(self.other), str(self.last)],
+        )
+        self.assertEqual(len([a for a in areas if a["kind"] == "size"]), 3)
+        self.assertEqual(len([a for a in areas if a["kind"] == "l2_sha256"]), 1)
+
+    async def test_selected_source_ignores_other_corrupt_areas(self):
+        self.differ(self.source, "excluded.flac")
+        self.differ(self.last, "excluded.bin")
+        copier = self.copier()
+        copier.plan_checks(include_copy=False, source=str(self.other))
+        await copier.checksum(source=str(self.other))
+        report = copier.finish_checks()
+        self.assertEqual(report["status"], "passed")
+        self.assertEqual(len(report["areas"]), 1)
+        self.assertEqual(report["areas"][0]["source"], str(self.other))
+        self.assertEqual(report["areas"][0]["destination"], str(self.target / "mirror" / self.other.name))
+        self.assertEqual(report["areas"][0]["checked"], 1)
+
+    async def test_selected_source_failure_has_only_that_area(self):
+        self.differ(self.last, "bad.bin")
+        copier = self.copier()
+        await copier.checksum(source=str(self.last))
+        with self.assertRaises(IntegrityFailure) as caught:
+            copier.finish_checks()
+        self.assertEqual(caught.exception.report["error_count"], 1)
+        self.assertEqual(len(caught.exception.report["areas"]), 1)
+        self.assertEqual(caught.exception.report["areas"][0]["source"], str(self.last))
+
+    async def test_test_scope_maps_only_the_separate_test_tree(self):
+        copier = Copier(dict(self.cfg, execution_mode="test"), self.disks)
+        pairs = copier.verification_pairs(test=True, source=str(self.source))
+        self.assertEqual(pairs, copier.pairs(test=True))
+        self.assertTrue(str(pairs[0][0]).startswith(str(self.source / "backup-steward-test")))
+        with self.assertRaises(ValueError):
+            copier.verification_pairs(test=True, source=str(self.other))
+
     async def test_all_success_finishes_with_no_errors(self):
         copier = self.copier()
         await copier.checksum()

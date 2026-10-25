@@ -7,7 +7,7 @@ import secrets
 import shutil
 import os
 
-from .config import public_config
+from .config import public_config, verification_source
 from .disks import Disks, Host
 from .schedule import checksum_due
 from .storage import Copier, confined, prune_l2
@@ -32,7 +32,7 @@ class Engine:
     def busy(self):
         return self.lock.locked() or bool(self.task and not self.task.done())
 
-    def start(self, mode="backup", scheduled_date=None):
+    def start(self, mode="backup", scheduled_date=None, *, source=None):
         if self.busy:
             raise ValueError("A job is already active")
         if self.cfg["execution_mode"] == "observe":
@@ -41,7 +41,8 @@ class Engine:
             raise ValueError("An interrupted execution needs recovery first")
         if mode not in ("backup", "backup_checksum", "checksum"):
             raise ValueError("Invalid operation")
-        self.task = asyncio.create_task(self.run(mode, scheduled_date))
+        source = verification_source(self.cfg, mode, source)
+        self.task = asyncio.create_task(self.run(mode, scheduled_date, source=source))
         return self.task
 
     async def notify(self, message):
@@ -55,9 +56,10 @@ class Engine:
 
         return start(self, action)
 
-    async def run(self, mode, scheduled_date=None):
+    async def run(self, mode, scheduled_date=None, *, source=None):
         async with self.lock:
             cfg = dict(self.cfg)
+            source = verification_source(cfg, mode, source)
             state = self.state
             host = self.host_factory(state.identity["instance_id"])
             disks = self.disks_factory(cfg, host)
@@ -78,6 +80,7 @@ class Engine:
                     stage="preflight",
                     run_id=run_id,
                     mode=mode,
+                    verification_source=source,
                     execution_mode=cfg["execution_mode"],
                     events=[],
                     l2="pending" if mode != "checksum" else "skipped",
@@ -94,7 +97,9 @@ class Engine:
                     failure_stage=None,
                     integrity=None,
                 )
-                copier.plan_checks(include_copy=mode != "checksum", include_full=checksum, test=test)
+                copier.plan_checks(
+                    include_copy=mode != "checksum", include_full=checksum, test=test, source=source
+                )
                 state.event("preflight", "A validar permissões, ausência de concorrência, discos e journal")
                 await self.api.preflight(cfg)
                 await host.acquire()
@@ -167,11 +172,11 @@ class Engine:
                     state.event("l3_copy", "A copiar e verificar o L3")
                     await copier.copy(run_id, test)
                 if checksum:
-                    state.event("checksum", "A comparar os checksums SHA-256 completos")
-                    await copier.checksum(test)
+                    state.event("checksum", f"A comparar SHA-256: {source or 'todas as origens'}")
+                    await copier.checksum(test, source=source)
                 copier.finish_checks()
                 # A partial or failed report never advances the production calendar.
-                if checksum and not test:
+                if checksum and not test and source is None:
                     state.update(last_checksum=datetime.now(timezone.utc).isoformat())
                 if mode != "checksum" and not test:
                     await disks.validate_destination()
@@ -188,7 +193,11 @@ class Engine:
                     needs_cleanup=False,
                     state="success",
                     stage="complete",
-                    last_success=datetime.now(timezone.utc).isoformat(),
+                    last_success=(
+                        datetime.now(timezone.utc).isoformat()
+                        if source is None
+                        else state.data.get("last_success")
+                    ),
                 )
             except asyncio.CancelledError:
                 copier.abort_checks()

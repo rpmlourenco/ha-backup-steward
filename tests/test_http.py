@@ -75,6 +75,37 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get("/v1/status", headers=self.auth())
         self.assertTrue((await response.json())["state"]["recovery_required"])
 
+    async def test_scoped_verification_api_and_configured_choices(self):
+        response = await self.client.get("/v1/status", headers=self.auth())
+        self.assertEqual(
+            (await response.json())["verification_sources"],
+            ["/media/NASRUI", "/media/immich", "/media/filebrowser"],
+        )
+        with patch.object(self.engine, "start") as start:
+            response = await self.client.post(
+                "/v1/run", headers=self.auth(), json={"mode": "checksum", "source": "/media/immich"}
+            )
+            self.assertEqual(response.status, 202)
+            start.assert_called_once_with("checksum", source="/media/immich")
+        self.engine.cfg["execution_mode"] = "test"
+        response = await self.client.get("/v1/status", headers=self.auth())
+        self.assertEqual((await response.json())["verification_sources"], ["/media/NASRUI"])
+
+    async def test_scope_request_types_and_unknown_fields_are_rejected(self):
+        with patch.object(self.engine, "start") as start:
+            for body in (
+                [],
+                {"source": "/media/immich"},
+                {"mode": "checksum", "source": None},
+                {"mode": "checksum", "source": False},
+                {"mode": "checksum", "source": ["/media/immich"]},
+                {"mode": "checksum", "source": "/media/immich", "path": "/etc"},
+            ):
+                with self.subTest(body=body):
+                    response = await self.client.post("/v1/run", headers=self.auth(), json=body)
+                    self.assertEqual(response.status, 400)
+            start.assert_not_called()
+
     async def test_observation_rejects_execution_and_arbitrary_operations(self):
         for mode in ("backup", "reboot; rm -rf /", "checksum"):
             response = await self.client.post("/v1/run", headers=self.auth(), json={"mode": mode})

@@ -59,14 +59,21 @@ def application(engine, ingress=False):
                 "next_run": next_run(now, engine.cfg),
                 "daily_retention_days": engine.cfg["l2_keep"],
                 "destination_mount": engine.cfg["destination_mount"],
+                "verification_sources": [engine.cfg["source_mount"]]
+                + (engine.cfg["additional_sources"] if engine.cfg["execution_mode"] != "test" else []),
             }
         )
 
     async def run(request):
         body = await request.json()
-        if set(body) != {"mode"}:
-            raise ValueError("Expected only the operation mode")
-        engine.start(body["mode"])
+        if not isinstance(body, dict) or "mode" not in body or set(body) - {"mode", "source"}:
+            raise ValueError("Expected operation mode and optional configured source")
+        if "source" in body:
+            if not isinstance(body["source"], str):
+                raise ValueError("Source must be a configured path")
+            engine.start(body["mode"], source=body["source"])
+        else:
+            engine.start(body["mode"])
         return web.json_response({"accepted": True}, status=202)
 
     async def recover(request):

@@ -1,3 +1,10 @@
+# 0.1.9 — Manual verification by area
+
+- Choose all configured sources or one source/mirror pair when requesting manual SHA-256 verification in the app.
+- Support optional exact configured source selection through the authenticated API and Home Assistant run action; existing buttons and schedules retain all-source behavior.
+- Preserve global checksum/success dates after single-area verification. Keep test data separation, error limits, error-only notifications and safe disk lifecycle.
+- Generate choices from configured sources and reject arbitrary paths or source selection on backup operations. No change is made to a currently running verification.
+
 # 0.1.8 — Global integrity overview
 
 - Continue verification across source/mirror pairs after integrity differences, missing files and read errors, collecting a complete overview instead of stopping at the first failed pair.

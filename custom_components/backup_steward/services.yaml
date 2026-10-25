@@ -17,3 +17,8 @@ run:
             - backup
             - backup_checksum
             - checksum
+    source:
+      name: Verification source
+      description: Optional exact configured source path, such as /media/immich. Only for checksum mode. Omit to verify all sources.
+      selector:
+        text:

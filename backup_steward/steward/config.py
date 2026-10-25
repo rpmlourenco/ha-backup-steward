@@ -130,3 +130,17 @@ def validate(raw):
 
 def public_config(cfg):
     return {k: copy.deepcopy(v) for k, v in cfg.items() if k not in SECRET_KEYS}
+
+
+def verification_source(cfg, mode, source):
+    """Manual scopes must name an exact configured root; never an arbitrary path."""
+    if source is None:
+        return None
+    if mode != "checksum":
+        raise ValueError("Selecting a source is only supported for checksum verification")
+    allowed = [cfg["source_mount"]]
+    if cfg["execution_mode"] != "test":
+        allowed += cfg["additional_sources"]
+    if not isinstance(source, str) or source not in allowed:
+        raise ValueError("Choose one configured source available in the current mode")
+    return source

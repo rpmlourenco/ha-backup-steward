@@ -279,6 +279,53 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.copier.copy.assert_not_awaited()
         self.copier.checksum.assert_awaited_once()
 
+    async def test_partial_checksum_preserves_global_dates_and_uses_selected_scope(self):
+        self.engine.cfg["execution_mode"] = "production"
+        previous = "2026-10-01T04:00:00+00:00"
+        self.state.update(last_checksum=previous, last_success=previous)
+        source = self.cfg["source_mount"]
+        with patch("steward.engine.shutil.disk_usage", return_value=Mock(free=1000 * 1024**3)):
+            await self.engine.start("checksum", source=source)
+        self.assertEqual(self.state.data["state"], "success")
+        self.assertEqual(self.state.data["verification_source"], source)
+        self.assertEqual(self.state.data["last_checksum"], previous)
+        self.assertEqual(self.state.data["last_success"], previous)
+        self.copier.checksum.assert_awaited_once_with(False, source=source)
+        self.copier.plan_checks.assert_called_once_with(
+            include_copy=False, include_full=True, test=False, source=source
+        )
+        self.copier.copy.assert_not_awaited()
+        self.copier.prune_history.assert_not_called()
+        self.api.create_l2.assert_not_awaited()
+        self.disks.safe_remove.assert_awaited_once()
+        self.api.notify.assert_not_awaited()
+
+    async def test_invalid_scopes_are_rejected_before_starting_any_work(self):
+        self.engine.cfg["execution_mode"] = "production"
+        for mode, source in [
+            ("backup", self.cfg["source_mount"]),
+            ("backup_checksum", self.cfg["source_mount"]),
+            ("checksum", "/etc"),
+            ("checksum", "/media/unknown"),
+            ("checksum", self.cfg["source_mount"] + "/.."),
+            ("checksum", self.cfg["source_mount"] + "/"),
+            ("checksum", [self.cfg["source_mount"]]),
+            ("checksum", False),
+        ]:
+            with self.subTest(mode=mode, source=source), self.assertRaises(ValueError):
+                self.engine.start(mode, source=source)
+        self.assertFalse(self.engine.busy)
+        self.api.power.assert_not_awaited()
+        self.copier.checksum.assert_not_awaited()
+
+    async def test_full_manual_checksum_still_advances_global_date(self):
+        self.engine.cfg["execution_mode"] = "production"
+        await self.run_engine("checksum")
+        self.assertEqual(self.state.data["state"], "success")
+        self.assertIsNotNone(self.state.data["last_checksum"])
+        self.assertIsNone(self.state.data["verification_source"])
+        self.copier.checksum.assert_awaited_once_with(False, source=None)
+
     async def test_preexisting_mount_is_not_touched(self):
         self.disks.mounted_on_host.return_value = True
         await self.run_engine()
