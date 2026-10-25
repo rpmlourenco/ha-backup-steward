@@ -1,3 +1,10 @@
+# 0.1.7 — Live rclone diagnostics
+
+- Relay structured rclone errors immediately with the affected file and a safe reason, rather than discarding stderr and retaining only an exit code.
+- Log concise progress every minute and durable per-source start/completion events for copy and SHA-256 verification.
+- Redact credentials, authentication schemes and URLs; ignore arbitrary JSON fields and limit detailed errors to eight plus a count of additional errors.
+- Preserve failure semantics, retention safeguards and safe shutdown. No automatic retry or checksum relaxation is introduced.
+
 # 0.1.6 — Manual destination controls
 
 - Add power-on/mount and safe unmount/power-off controls to the app and companion integration.

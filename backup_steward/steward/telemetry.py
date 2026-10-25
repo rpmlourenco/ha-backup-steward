@@ -3,6 +3,7 @@
 from datetime import datetime
 import logging
 import os
+import re
 import sys
 from zoneinfo import ZoneInfo
 
@@ -62,3 +63,16 @@ def announce_policy(cfg):
         if cfg.get("encryption_password")
         else "Encriptação: chave ainda não configurada"
     )
+
+
+def process_text(value):
+    """Bounded process diagnostics; omit URLs, auth schemes and named secrets."""
+    text = redact(value)
+    text = re.sub(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s\"'<>]+", "[URL redacted]", text)
+    text = re.sub(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]+", r"\1 [redacted]", text)
+    text = re.sub(
+        r"(?i)\b(password|passwd|token|secret|api[_-]?key|authorization)\b(\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)",
+        r"\1\2[redacted]",
+        text,
+    )
+    return re.sub(r"[\x00-\x1f\x7f]", " ", text)[:400]

@@ -60,7 +60,7 @@ class Engine:
             state = self.state
             host = self.host_factory(state.identity["instance_id"])
             disks = self.disks_factory(cfg, host)
-            copier = self.copier_factory(cfg, disks)
+            copier = self.copier_factory(cfg, disks, state.event)
             run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             checksum = mode != "backup" or checksum_due(
                 datetime.now(timezone.utc), cfg, state.data.get("last_checksum")

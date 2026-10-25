@@ -20,7 +20,7 @@ async def main():
     requests = []
     destination_requests = []
     data = {
-        "version": "0.1.6",
+        "version": "0.1.7",
         "busy": False,
         "mode": "test",
         "schedule_enabled": False,

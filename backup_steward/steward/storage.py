@@ -10,6 +10,8 @@ import shutil
 import stat
 import tarfile
 
+from . import telemetry
+
 
 ARCHIVE = re.compile(r"steward_l2_\d{8}T\d{6}Z_[a-f0-9]{8}\.tar")
 LEGACY = re.compile(r"L2_NASRUI_apps_(?:(?:semanal|manual)_)?\d{4}_\d{2}_\d{2}(?:_\d{2}_\d{2}_\d{2})?\.tar")
@@ -100,6 +102,8 @@ def count_files(root):
 
 
 async def command(*args, timeout=120):
+    if Path(args[0]).name == "rclone":
+        return await rclone_command(args, timeout)
     process = await asyncio.create_subprocess_exec(
         *map(str, args),
         stdout=asyncio.subprocess.PIPE,
@@ -107,24 +111,105 @@ async def command(*args, timeout=120):
     )
     try:
         async with asyncio.timeout(timeout):
-            output, error = await process.communicate()
+            output, _ = await process.communicate()
     except BaseException:
-        process.terminate()
+        await stop_process(process)
+        raise
+    if process.returncode:
+        raise RuntimeError(f"{Path(args[0]).name} failed with exit code {process.returncode}")
+    return output.decode("utf-8", errors="replace").strip()
+
+
+async def stop_process(process):
+    if process.returncode is None:
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            return
         try:
             await asyncio.wait_for(process.wait(), 10)
         except TimeoutError:
             process.kill()
             await process.wait()
+
+
+async def rclone_command(args, timeout):
+    args = list(map(str, args))
+    # Parse structured errors as they arrive. INFO permits periodic statistics;
+    # successful per-file messages and arbitrary JSON fields are never relayed.
+    for flag, value in (("--log-level", "INFO"), ("--stats", "60s"), ("--stats-log-level", "NOTICE")):
+        if flag in args:
+            args[args.index(flag) + 1] = value
+        else:
+            args.extend((flag, value))
+    if "--use-json-log" not in args:
+        args.append("--use-json-log")
+    process = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        limit=256 * 1024,
+    )
+    details = []
+    error_count = 0
+
+    async def read_diagnostics():
+        nonlocal error_count
+        while line := await process.stderr.readline():
+            try:
+                record = json.loads(line)
+            except ValueError, UnicodeDecodeError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            stats = record.get("stats")
+            if isinstance(stats, dict):
+                numbers = {
+                    key: stats.get(key, 0) if type(stats.get(key, 0)) in (int, float) else 0
+                    for key in ("checks", "bytes", "elapsedTime")
+                }
+                telemetry.event(
+                    f"rclone: verificados={numbers['checks']}; transferidos={numbers['bytes']} bytes; tempo={round(numbers['elapsedTime'], 1)} s"
+                )
+            if record.get("level") not in ("error", "fatal"):
+                continue
+            error_count += 1
+            if len(details) >= 8:
+                continue
+            message = telemetry.process_text(record.get("msg", "rclone error"))
+            object_name = telemetry.process_text(record.get("object", "")) if record.get("object") else ""
+            detail = f"{message} [{object_name}]" if object_name else message
+            details.append(detail)
+            telemetry.event(f"rclone: {detail}", level=40)
+
+    readers = [asyncio.create_task(process.stdout.read()), asyncio.create_task(read_diagnostics())]
+    try:
+        async with asyncio.timeout(timeout):
+            output, _ = await asyncio.gather(*readers)
+            await process.wait()
+    except BaseException:
+        await stop_process(process)
+        for reader in readers:
+            reader.cancel()
+        await asyncio.gather(*readers, return_exceptions=True)
         raise
+    if error_count > len(details):
+        telemetry.event(
+            f"rclone: mais {error_count - len(details)} mensagens de erro; limite de detalhes atingido",
+            level=40,
+        )
     if process.returncode:
-        # Local process errors can include authenticated URLs; do not expose raw stderr.
-        raise RuntimeError(f"{Path(args[0]).name} failed with exit code {process.returncode}")
+        summary = f"rclone failed with exit code {process.returncode}"
+        if details:
+            summary += ": " + details[0]
+        raise RuntimeError(summary)
     return output.decode("utf-8", errors="replace").strip()
 
 
 class Copier:
-    def __init__(self, cfg, disks):
+    def __init__(self, cfg, disks, on_event=None):
         self.cfg, self.disks = cfg, disks
+        self.on_event = on_event or (lambda stage, message: telemetry.event(f"{stage}: {message}"))
 
     def pairs(self, test=False):
         c = self.cfg
@@ -144,6 +229,7 @@ class Copier:
     async def copy(self, run_id, test=False):
         c = self.cfg
         for source, target in self.pairs(test):
+            self.on_event("l3_source", f"A copiar e verificar tamanhos: {source} → {target}")
             await self.disks.validate_source()
             await self.disks.validate_destination()
             confined(source, Path(c["source_mount"]) if test else source)
@@ -186,8 +272,10 @@ class Copier:
             if test:
                 check.append("--one-way")
             await command(*check, timeout=7 * 86400)
+            self.on_event("l3_verified", f"Cópia e tamanhos confirmados: {source}")
         source = Path(c["source_mount"]) / (c["test_directory"] + "/level-2" if test else c["l2_directory"])
         destination = self.pairs(test)[0][1] if test else self.pairs()[0][1] / c["l2_directory"]
+        self.on_event("l2_archive_checksum", "A confirmar SHA-256 dos arquivos L2 entregues ao espelho")
         await command(
             "rclone",
             "--config",
@@ -203,6 +291,7 @@ class Copier:
 
     async def checksum(self, test=False):
         for source, destination in self.pairs(test):
+            self.on_event("checksum_source", f"A verificar SHA-256: {source} → {destination}")
             await self.disks.validate_source()
             await self.disks.validate_destination()
             confined(source, source)
@@ -228,6 +317,7 @@ class Copier:
                 "2",
                 timeout=7 * 86400,
             )
+            self.on_event("checksum_verified", f"SHA-256 confirmado: {source}")
 
     def prune_history(self):
         root = confined(Path(self.cfg["destination_mount"]) / "history", Path(self.cfg["destination_mount"]))

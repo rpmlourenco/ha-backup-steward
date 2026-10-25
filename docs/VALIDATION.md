@@ -49,3 +49,10 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
 - Official Home Assistant 2026.10.3 smoke passes with 17 entities, authenticated manual disk actions and button availability transitions. All actions target a simulated app API.
 - Browser checks pass for manual request bodies/confirmation text, observation restrictions, mounted-state presentation and desktop/mobile layout without horizontal overflow or JavaScript errors.
 - Manual hardware acceptance is pending; no real disk or power operation was invoked during implementation.
+
+## 0.1.7 follow-up
+
+- 81 isolated tests pass, adding error delivery before process completion, credential/URL redaction, bounded error output, concise progress and subprocess timeout cleanup.
+- A real rclone 1.75.1 fixture with the exact production checksum flags returned 0 for identical files and 1 with sha256 differ for changed content of the same size. The new adapter captured both the reason and affected file immediately. Only temporary isolated files were used.
+- The original production failure's stderr was discarded by 0.1.6 and cannot be reconstructed. Read-only size/name comparisons currently match all three real source/mirror trees; this does not establish checksum equality or the cause of the original failure.
+- No new full checksum, copy, retention or hardware operation was initiated by these changes. The real destination remains in the user-opened manual session until the user closes it.

@@ -4,7 +4,7 @@
 
 Encrypted Home Assistant backups, verified offline copies, and safe disk shutdown — packaged as one app with a lightweight companion integration.
 
-> **Experimental 0.1.6.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
+> **Experimental 0.1.7.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
 
 ![Backup Steward interface](docs/images/overview.png)
 
@@ -115,3 +115,5 @@ Home Assistant notifications are sent only for errors, including retention failu
 Use **Ligar e montar** to power on and mount the configured destination without running a backup. It stays mounted until **Desmontar e desligar** confirms sync, unmount, kernel removal and final SCSI flush before switching off power. The integration provides the same two buttons.
 
 Manual sessions reserve the backup lock: scheduled/manual backups and settings changes wait until the destination is closed. Observation mode never operates disks. An already powered or externally mounted destination is not adopted. Close files/apps using the destination before shutdown; an unsuccessful unmount or unknown flush leaves power on and reports an error. Restarting the app preserves the shutdown obligation and requires recovery. Manual controls never advance backup/checksum success timestamps, create archives or apply retention.
+
+Rclone errors are relayed immediately with a bounded affected-file/reason report; progress is logged every minute. Copy/checksum phases identify the current source and record completion per source. Credentials and URLs are redacted; per-file success messages and arbitrary JSON fields are not dumped. The first eight error messages are shown, followed by a count if more occurred.
