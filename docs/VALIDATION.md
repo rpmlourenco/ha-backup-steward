@@ -37,3 +37,8 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
 - 66 isolated tests pass, including host removal request properties with real D-Bus Variant validation, missing lease, unsafe device names and failed/unknown command outcomes. Existing kernel flush failure/absence tests remain required.
 - Read-only pilot diagnosis confirmed sysfs is read-only inside the app and writable on HAOS. The HDD had been unmounted before the 0.1.3 recovery failed; the disk remained present and power remained on. The stock host tee utility exists.
 - The official Home Assistant 2026.10.3 smoke and ARM64 build pass. Actual execution of the new host removal unit remains a manual hardware acceptance step; diagnostics did not run it.
+
+## 0.1.5 follow-up
+
+- 66 isolated tests pass, including silent success and notifications for backup/retention failures. The retention-error notification remains even when L3 and safe shutdown complete.
+- Official Home Assistant 2026.10.3 integration smoke and ARM64 image build pass. No Home Assistant services or hardware operations were invoked by this change.

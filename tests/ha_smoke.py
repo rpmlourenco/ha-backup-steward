@@ -19,7 +19,7 @@ from homeassistant.helpers import area_registry, device_registry, entity_registr
 async def main():
     requests = []
     data = {
-        "version": "0.1.4",
+        "version": "0.1.5",
         "busy": False,
         "mode": "test",
         "schedule_enabled": False,

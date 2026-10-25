@@ -1,3 +1,9 @@
+# 0.1.5 — Notify only on errors
+
+- Successful backups and checksum runs no longer create Home Assistant notifications. Results remain visible in the app and console log.
+- Failure and retention-error notifications remain enabled; a successful completion cannot overwrite a retention-error notification.
+- Existing settings and keys are preserved.
+
 # 0.1.4 — Host-side kernel disk removal
 
 - Request kernel disk removal through host systemd over the existing D-Bus connection. App sysfs remains read-only.

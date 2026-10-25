@@ -4,7 +4,7 @@
 
 Encrypted Home Assistant backups, verified offline copies, and safe disk shutdown — packaged as one app with a lightweight companion integration.
 
-> **Experimental 0.1.4.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
+> **Experimental 0.1.5.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
 
 ![Backup Steward interface](docs/images/overview.png)
 
@@ -107,3 +107,5 @@ The repository and `custom_components/backup_steward/brand/` ship the same icon 
 The Supervisor Log tab receives concise startup and workflow messages on stdout: version/mode, configuration ready, schedule enabled or disabled (time/zone/checksum), interface ready, execution ID, validation, power/mount, native creation and waiting, delivery, L3/checksum, retention, safe removal and result. Failure/recovery messages include the affected stage and safe HTTP method/path/status. Polling does not produce a log line on every request. Known encryption/pairing/Supervisor secrets are redacted.
 
 The app requires the Supervisor `manager` role to read `/jobs/<uuid>` for native background-job completion. The narrower `backup` role permits creating backups but rejects that polling endpoint. Before powering the HDD, a harmless read-only permission probe verifies this exact access. No admin role is requested.
+
+Home Assistant notifications are sent only for errors, including retention failures. Successful runs remain visible in the app and console log without a notification.

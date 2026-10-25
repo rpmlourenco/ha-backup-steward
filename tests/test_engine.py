@@ -86,12 +86,14 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.copier.prune_history.assert_not_called()
         self.disks.safe_remove.assert_awaited_once()
         self.assertEqual(self.api.power.call_args_list[-1].args, ("switch.disk", False))
+        self.api.notify.assert_not_awaited()
 
     async def test_transfer_failure_never_deletes_native_or_old_archives(self):
         self.api.download.side_effect = RuntimeError("download failed")
         with patch("steward.engine.prune_l2") as prune:
             await self.run_engine()
         self.assertEqual(self.state.data["state"], "failed")
+        self.api.notify.assert_awaited_once()
         self.api.delete_temporary.assert_not_awaited()
         self.copier.copy.assert_not_awaited()
         prune.assert_not_called()
@@ -133,6 +135,9 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.state.data["retention"], "failed")
         self.assertEqual(self.state.data["l3"], "success")
         self.copier.copy.assert_awaited_once()
+        self.api.notify.assert_awaited_once_with(
+            "L2 was delivered, but archive retention failed. L3 will continue."
+        )
 
     async def test_full_checksum_failure_does_not_prune_history(self):
         self.engine.cfg["execution_mode"] = "production"

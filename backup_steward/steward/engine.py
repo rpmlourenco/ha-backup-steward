@@ -178,7 +178,6 @@ class Engine:
                     stage="complete",
                     last_success=datetime.now(timezone.utc).isoformat(),
                 )
-                await self.notify("Backup Steward completed. Destination safely removed and power off.")
             except asyncio.CancelledError:
                 state.update(
                     state="interrupted",
