@@ -49,6 +49,11 @@ class Engine:
         except Exception:
             self.state.event("notification_pending", "Notification unavailable; inspect app status")
 
+    def start_destination(self, action):
+        from .destination import start
+
+        return start(self, action)
+
     async def run(self, mode, scheduled_date=None):
         async with self.lock:
             cfg = dict(self.cfg)
@@ -66,6 +71,7 @@ class Engine:
             try:
                 state.update(
                     state="running",
+                    destination_manual=False,
                     stage="preflight",
                     run_id=run_id,
                     mode=mode,
@@ -253,10 +259,14 @@ class Engine:
             cfg.update(self.state.data.get("config_snapshot", {}))
             host = self.host_factory(self.state.identity["instance_id"])
             disks = self.disks_factory(cfg, host)
+            manual = self.state.data.get("destination_manual", False)
             try:
                 self.state.update(state="recovering", stage="recovery_start")
                 self.state.event(
-                    "recovery_start", "A recuperar a execução anterior; não será criado outro backup"
+                    "recovery_start",
+                    "Controlo manual: a iniciar o fecho seguro do destino"
+                    if manual
+                    else "A recuperar a execução anterior; não será criado outro backup",
                 )
                 await host.acquire(recovering=True)
                 job = self.state.data.get("backup_job")
@@ -273,15 +283,27 @@ class Engine:
                 if not self.state.data.get("safe_to_power_off"):
                     self.state.event(
                         "recovery_shutdown",
-                        "Trabalho nativo terminado; a concluir a desmontagem e flush seguros",
+                        "A concluir a desmontagem e flush seguros do destino"
+                        if manual
+                        else "Trabalho nativo terminado; a concluir a desmontagem e flush seguros",
                     )
                     await disks.safe_remove()
                     self.state.update(safe_to_power_off=True)
                 await disks.verify_removed()
                 await self.api.power(cfg["power_entity"], False)
-                self.state.update(needs_cleanup=False, state="interrupted", stage="recovered")
+                self.state.update(
+                    needs_cleanup=False,
+                    destination_manual=False,
+                    state="destination_off" if manual else "interrupted",
+                    stage="recovered",
+                )
                 await host.release()
-                self.state.event("recovered", "Recuperação concluída; destino desligado em segurança")
+                self.state.event(
+                    "recovered",
+                    "Controlo manual concluído; destino desligado em segurança"
+                    if manual
+                    else "Recuperação concluída; destino desligado em segurança",
+                )
             except Exception as error:
                 detail = telemetry.redact(str(error))[:240]
                 self.state.event("failure_detail", f"Recuperação falhou: {detail}")

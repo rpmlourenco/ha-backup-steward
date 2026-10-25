@@ -101,5 +101,7 @@ class State:
         return dict(
             self.data,
             instance_id=self.identity["instance_id"],
-            recovery_required=bool(self.data.get("needs_cleanup")) and not busy,
+            recovery_required=bool(self.data.get("needs_cleanup"))
+            and not busy
+            and self.data.get("state") != "destination_mounted",
         )

@@ -4,7 +4,7 @@
 
 Encrypted Home Assistant backups, verified offline copies, and safe disk shutdown — packaged as one app with a lightweight companion integration.
 
-> **Experimental 0.1.5.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
+> **Experimental 0.1.6.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
 
 ![Backup Steward interface](docs/images/overview.png)
 
@@ -109,3 +109,9 @@ The Supervisor Log tab receives concise startup and workflow messages on stdout:
 The app requires the Supervisor `manager` role to read `/jobs/<uuid>` for native background-job completion. The narrower `backup` role permits creating backups but rejects that polling endpoint. Before powering the HDD, a harmless read-only permission probe verifies this exact access. No admin role is requested.
 
 Home Assistant notifications are sent only for errors, including retention failures. Successful runs remain visible in the app and console log without a notification.
+
+## Manual destination controls
+
+Use **Ligar e montar** to power on and mount the configured destination without running a backup. It stays mounted until **Desmontar e desligar** confirms sync, unmount, kernel removal and final SCSI flush before switching off power. The integration provides the same two buttons.
+
+Manual sessions reserve the backup lock: scheduled/manual backups and settings changes wait until the destination is closed. Observation mode never operates disks. An already powered or externally mounted destination is not adopted. Close files/apps using the destination before shutdown; an unsuccessful unmount or unknown flush leaves power on and reports an error. Restarting the app preserves the shutdown obligation and requires recovery. Manual controls never advance backup/checksum success timestamps, create archives or apply retention.

@@ -14,6 +14,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
             ),
             StewardButton(entry, "checksum", "Verify full checksums", "mdi:shield-search"),
             StewardButton(entry, "recover", "Recover safe shutdown", "mdi:harddisk-remove"),
+            StewardButton(entry, "destination_mount", "Power on and mount destination", "mdi:harddisk-plus"),
+            StewardButton(
+                entry, "destination_shutdown", "Unmount and power off destination", "mdi:harddisk-remove"
+            ),
         ]
     )
 
@@ -28,12 +32,19 @@ class StewardButton(StewardEntity, ButtonEntity):
         data = self.coordinator.data
         if not super().available or data["mode"] == "observe" or data["busy"]:
             return False
-        return bool(data["state"].get("needs_cleanup")) == (self.key == "recover")
+        owned = bool(data["state"].get("needs_cleanup"))
+        if self.key == "destination_shutdown":
+            return owned
+        if self.key == "recover":
+            return bool(data["state"].get("recovery_required", owned))
+        return not owned
 
     async def async_press(self):
         try:
             if self.key == "recover":
                 await self.api.recover()
+            elif self.key.startswith("destination_"):
+                await self.api.destination(self.key.removeprefix("destination_"))
             else:
                 await self.api.run(self.key)
         except (CannotConnect, InvalidAuth) as error:

@@ -45,10 +45,11 @@ App sysfs is read-only. After UUID/layout validation, sync, unmount and block-de
 6. Full checksum failure blocks L3 history pruning and does not advance the successful checksum deadline.
 7. Power-off requires safe removal proof. If a device reappears after that proof, power-off is blocked.
 8. Restoration uses native backup archives; no proprietary restore format is introduced.
+9. Manual destination sessions keep the same host lease and persist original identities before power-on. They never create backups, apply retention or advance backup/checksum timestamps. Backups, scheduling and settings are blocked until safe closure. App restart converts an open manual session into a recovery obligation.
 
 ## API
 
-The app emits concise timestamped lifecycle and workflow events to stdout for the Supervisor Log tab. Startup distinguishes a ready scheduler from an enabled schedule. Errors identify the failing phase without logging credentials or raw API bodies. Persistent `needs_cleanup` records disk ownership during a run; public `recovery_required` is true only when cleanup is pending and no job is busy.
+The app emits concise timestamped lifecycle and workflow events to stdout for the Supervisor Log tab. Startup distinguishes a ready scheduler from an enabled schedule. Errors identify the failing phase without logging credentials or raw API bodies. Persistent `needs_cleanup` records disk ownership; public `recovery_required` excludes busy jobs and intentionally mounted manual sessions. Manual session state is explicit (`destination_mounting`, `destination_mounted`, `destination_off`) and is separate from successful-backup timestamps.
 
 Port 8099 serves the UI only to the configured Supervisor ingress peer, default `172.30.32.2`. State-changing browser requests require a custom header; there is no permissive CORS policy. Port 8100 is not exposed on the host by default; it authenticates every request using a random per-installation pairing key.
 
@@ -57,6 +58,7 @@ Port 8099 serves the UI only to the configured Supervisor ingress peer, default 
 | `GET /v1/status` | Bounded public state, policy summary and next run |
 | `POST /v1/run` | `backup`, `backup_checksum` or `checksum`; returns 202 |
 | `POST /v1/recover` | Start serialized recovery |
+| `POST /v1/destination` | Strict `action: mount` or `action: shutdown`; serialized manual destination control, returns 202 |
 | `GET/PUT /v1/config` | Ingress only, secrets omitted from reads |
 | `POST /v1/pair` | Ingress only, explicit pairing-key reveal |
 

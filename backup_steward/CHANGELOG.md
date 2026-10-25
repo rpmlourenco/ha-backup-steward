@@ -1,3 +1,10 @@
+# 0.1.6 — Manual destination controls
+
+- Add power-on/mount and safe unmount/power-off controls to the app and companion integration.
+- Manual sessions preserve the host lock and physical identities until closed, blocking concurrent backups, scheduling and configuration changes.
+- Reuse native-job completion checks and final kernel SCSI proof for shutdown. No source mount, backup, retention or successful-backup timestamp is changed by manual controls.
+- Persist interrupted sessions for recovery after app restart; retain error-only notifications and observation-mode restrictions.
+
 # 0.1.5 — Notify only on errors
 
 - Successful backups and checksum runs no longer create Home Assistant notifications. Results remain visible in the app and console log.

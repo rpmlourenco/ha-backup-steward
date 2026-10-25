@@ -303,6 +303,13 @@ h2 {
 .journey {
   padding: 26px 28px;
 }
+.destination-controls {
+  margin-top: 20px;
+}
+.destination-controls .subtitle {
+  font-size: 13px;
+  margin-bottom: 0;
+}
 .section-heading {
   display: flex;
   justify-content: space-between;

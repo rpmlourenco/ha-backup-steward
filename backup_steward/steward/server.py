@@ -58,6 +58,7 @@ def application(engine, ingress=False):
                 "checksum_frequency": engine.cfg["checksum_frequency"],
                 "next_run": next_run(now, engine.cfg),
                 "daily_retention_days": engine.cfg["l2_keep"],
+                "destination_mount": engine.cfg["destination_mount"],
             }
         )
 
@@ -88,6 +89,15 @@ def application(engine, ingress=False):
     app.router.add_get("/v1/status", status)
     app.router.add_post("/v1/run", run)
     app.router.add_post("/v1/recover", recover)
+
+    async def destination(request):
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) != {"action"}:
+            raise ValueError("Expected only the destination action")
+        engine.start_destination(body["action"])
+        return web.json_response({"accepted": True}, status=202)
+
+    app.router.add_post("/v1/destination", destination)
     if ingress:
 
         async def index(request):

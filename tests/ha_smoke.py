@@ -18,8 +18,9 @@ from homeassistant.helpers import area_registry, device_registry, entity_registr
 
 async def main():
     requests = []
+    destination_requests = []
     data = {
-        "version": "0.1.5",
+        "version": "0.1.6",
         "busy": False,
         "mode": "test",
         "schedule_enabled": False,
@@ -43,6 +44,13 @@ async def main():
     app = web.Application()
     app.router.add_get("/v1/status", status)
     app.router.add_post("/v1/run", run)
+
+    async def destination(request):
+        assert request.headers.get("Authorization") == "Bearer fixture-key"
+        destination_requests.append(await request.json())
+        return web.json_response({"accepted": True}, status=202)
+
+    app.router.add_post("/v1/destination", destination)
     async with TestServer(app) as server:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -99,11 +107,35 @@ async def main():
                 assert requests == [{"mode": "backup_checksum"}], requests
                 states = hass.states.async_all()
                 assert len([s for s in states if s.entity_id.startswith("sensor.")]) >= 8
-                assert len([s for s in states if s.entity_id.startswith("button.")]) == 4
+                assert len([s for s in states if s.entity_id.startswith("button.")]) == 6
                 registry = entity_registry.async_get(hass)
                 recovery_entity = registry.async_get_entity_id(
                     "binary_sensor", "backup_steward", "fixture-instance_needs_cleanup"
                 )
+
+                def button(key):
+                    return registry.async_get_entity_id("button", "backup_steward", f"fixture-instance_{key}")
+
+                await hass.services.async_call(
+                    "button", "press", {"entity_id": button("destination_mount")}, blocking=True
+                )
+                data["state"].update(
+                    state="destination_mounted",
+                    needs_cleanup=True,
+                    destination_manual=True,
+                    recovery_required=False,
+                )
+                await entry.runtime_data.coordinator.async_refresh()
+                await hass.async_block_till_done()
+                assert hass.states.get(recovery_entity).state == "off"
+                assert hass.states.get(button("destination_mount")).state == "unavailable"
+                assert hass.states.get(button("backup")).state == "unavailable"
+                assert hass.states.get(button("recover")).state == "unavailable"
+                assert hass.states.get(button("destination_shutdown")).state != "unavailable"
+                await hass.services.async_call(
+                    "button", "press", {"entity_id": button("destination_shutdown")}, blocking=True
+                )
+                assert destination_requests == [{"action": "mount"}, {"action": "shutdown"}]
                 data["busy"] = True
                 data["state"].update(state="running", needs_cleanup=True, recovery_required=False)
                 await entry.runtime_data.coordinator.async_refresh()
@@ -118,7 +150,7 @@ async def main():
                 assert await hass.config_entries.async_unload(entry.entry_id)
                 assert not hass.services.has_service("backup_steward", "run")
                 print(
-                    "HA smoke passed: config flow, authenticated polling, 15 entities, manual action and unload"
+                    "HA smoke passed: config flow, authenticated polling, 17 entities, manual backup/disk controls and unload"
                 )
             finally:
                 await hass.async_stop(force=True)

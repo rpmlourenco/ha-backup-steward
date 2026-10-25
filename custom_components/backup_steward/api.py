@@ -43,3 +43,6 @@ class Client:
 
     async def recover(self):
         return await self.request("POST", "recover", {})
+
+    async def destination(self, action):
+        return await self.request("POST", "destination", {"action": action})

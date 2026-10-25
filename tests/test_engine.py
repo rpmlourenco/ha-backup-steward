@@ -88,6 +88,105 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.api.power.call_args_list[-1].args, ("switch.disk", False))
         self.api.notify.assert_not_awaited()
 
+    async def test_manual_session_mounts_and_closes_without_creating_a_backup(self):
+        self.state.update(last_success="2026-10-25T00:00:00+00:00")
+        task = self.engine.start_destination("mount")
+        self.assertTrue(self.engine.busy)
+        with self.assertRaises(ValueError):
+            self.engine.start_destination("mount")
+        await task
+        self.assertEqual(self.state.data["state"], "destination_mounted")
+        self.assertTrue(self.state.data["needs_cleanup"])
+        self.assertFalse(self.state.public()["recovery_required"])
+        self.host.release.assert_not_awaited()
+        self.api.create_l2.assert_not_awaited()
+        self.copier.copy.assert_not_awaited()
+        with self.assertRaises(ValueError):
+            self.engine.start("backup")
+        # Even an out-of-band configuration change cannot redirect shutdown.
+        self.engine.cfg["power_entity"] = "switch.changed"
+        await self.engine.start_destination("shutdown")
+        self.assertEqual(self.state.data["state"], "destination_off")
+        self.assertFalse(self.state.data["needs_cleanup"])
+        self.disks.safe_remove.assert_awaited_once()
+        self.disks.verify_removed.assert_awaited_once()
+        self.assertEqual(self.api.power.call_args_list[-1].args, ("switch.disk", False))
+        self.host.release.assert_awaited_once()
+        self.api.notify.assert_not_awaited()
+        self.assertEqual(self.state.data["last_success"], "2026-10-25T00:00:00+00:00")
+
+    async def test_manual_mount_failure_preserves_power_and_recovery_ownership(self):
+        self.disks.mount.side_effect = RuntimeError("mount refused")
+        await self.engine.start_destination("mount")
+        self.assertEqual(self.state.data["state"], "failed")
+        self.assertTrue(self.state.public()["recovery_required"])
+        self.host.release.assert_not_awaited()
+        self.disks.safe_remove.assert_not_awaited()
+        self.api.power.assert_awaited_once_with("switch.disk", True)
+        self.api.notify.assert_awaited_once()
+
+    async def test_manual_preflight_failure_never_touches_power(self):
+        self.api.preflight.side_effect = RuntimeError("busy")
+        await self.engine.start_destination("mount")
+        self.api.power.assert_not_awaited()
+        self.disks.mount.assert_not_awaited()
+        self.assertFalse(self.state.data["needs_cleanup"])
+
+    async def test_manual_control_never_adopts_an_external_powered_destination(self):
+        self.api.core_state.return_value = "on"
+        await self.engine.start_destination("mount")
+        self.api.power.assert_not_awaited()
+        self.disks.mount.assert_not_awaited()
+        self.assertFalse(self.state.data["needs_cleanup"])
+
+    async def test_manual_shutdown_failure_does_not_cut_power(self):
+        await self.engine.start_destination("mount")
+        self.disks.safe_remove.side_effect = RuntimeError("flush unknown")
+        await self.engine.start_destination("shutdown")
+        self.assertTrue(self.state.data["needs_cleanup"])
+        self.assertEqual(self.api.power.await_count, 1)
+        self.host.release.assert_not_awaited()
+        self.api.notify.assert_awaited_once()
+
+    async def test_scheduler_waits_while_destination_is_manually_open(self):
+        from steward.server import scheduler
+
+        self.state.update(state="destination_mounted", needs_cleanup=True, destination_manual=True)
+        with (
+            patch.object(self.engine, "start") as start,
+            patch("steward.server.due", side_effect=AssertionError("Manual session must block calendar")),
+            patch("steward.server.asyncio.sleep", side_effect=asyncio.CancelledError),
+        ):
+            with self.assertRaises(asyncio.CancelledError):
+                await scheduler(self.engine)
+        start.assert_not_called()
+
+    async def test_manual_controls_reject_observation_invalid_actions_and_unowned_shutdown(self):
+        for action in ("shutdown", "format", "mount; reboot"):
+            with self.subTest(action=action), self.assertRaises(ValueError):
+                self.engine.start_destination(action)
+        self.engine.cfg["execution_mode"] = "observe"
+        with self.assertRaises(ValueError):
+            self.engine.start_destination("mount")
+        self.api.power.assert_not_awaited()
+
+    async def test_cancelled_manual_power_on_remains_recoverable(self):
+        entered = asyncio.Event()
+
+        async def interrupted_power(*args):
+            entered.set()
+            await asyncio.Future()
+
+        self.api.power.side_effect = interrupted_power
+        task = self.engine.start_destination("mount")
+        await entered.wait()
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertEqual(self.state.data["state"], "interrupted")
+        self.assertTrue(self.state.public()["recovery_required"])
+        self.host.release.assert_not_awaited()
+
     async def test_transfer_failure_never_deletes_native_or_old_archives(self):
         self.api.download.side_effect = RuntimeError("download failed")
         with patch("steward.engine.prune_l2") as prune:

@@ -42,3 +42,10 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
 
 - 66 isolated tests pass, including silent success and notifications for backup/retention failures. The retention-error notification remains even when L3 and safe shutdown complete.
 - Official Home Assistant 2026.10.3 integration smoke and ARM64 image build pass. No Home Assistant services or hardware operations were invoked by this change.
+
+## 0.1.6 follow-up
+
+- 76 isolated tests pass, adding manual mount/close, concurrency and observation guards, authenticated/strict API requests, failure/cancellation ownership, original shutdown identity, unchanged backup timestamps, schedule blocking and durable restart recovery.
+- Official Home Assistant 2026.10.3 smoke passes with 17 entities, authenticated manual disk actions and button availability transitions. All actions target a simulated app API.
+- Browser checks pass for manual request bodies/confirmation text, observation restrictions, mounted-state presentation and desktop/mobile layout without horizontal overflow or JavaScript errors.
+- Manual hardware acceptance is pending; no real disk or power operation was invoked during implementation.

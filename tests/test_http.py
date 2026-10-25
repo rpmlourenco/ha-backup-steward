@@ -61,6 +61,25 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 400)
         self.engine.api.power.assert_not_called()
 
+    async def test_manual_destination_route_is_authenticated_guarded_and_strict(self):
+        response = await self.client.post("/v1/destination", json={"action": "mount"})
+        self.assertEqual(response.status, 401)
+        for body in (
+            {"action": "mount"},
+            {"action": "shutdown"},
+            {"action": "format"},
+            {"action": "mount", "path": "/dev/sda"},
+        ):
+            response = await self.client.post("/v1/destination", headers=self.auth(), json=body)
+            self.assertEqual(response.status, 400)
+        self.engine.api.power.assert_not_called()
+        with patch.object(self.engine, "start_destination") as start:
+            response = await self.client.post(
+                "/v1/destination", headers=self.auth(), json={"action": "mount"}
+            )
+            self.assertEqual(response.status, 202)
+            start.assert_called_once_with("mount")
+
     async def test_ingress_rejects_non_supervisor_clients(self):
         client = TestClient(TestServer(application(self.engine, ingress=True)))
         await client.start_server()

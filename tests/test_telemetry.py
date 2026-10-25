@@ -72,6 +72,37 @@ class LoggingTests(unittest.TestCase):
 
 
 class PermissionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_restart_preserves_manual_destination_for_recovery(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as temp:
+            state = State(temp)
+            state.update(state="destination_mounted", needs_cleanup=True, destination_manual=True)
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-B",
+                "-m",
+                "steward",
+                cwd=root / "backup_steward",
+                env=dict(os.environ, STEWARD_DATA=temp),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            try:
+                async with asyncio.timeout(15):
+                    while True:
+                        line = (await process.stdout.readline()).decode("utf-8")
+                        self.assertTrue(line, "App exited before readiness")
+                        if "Interface e API prontas" in line:
+                            break
+                restored = State(temp)
+                self.assertTrue(restored.public()["recovery_required"])
+                self.assertEqual(restored.data["state"], "interrupted")
+                self.assertTrue(restored.data["destination_manual"])
+            finally:
+                if process.returncode is None:
+                    process.terminate()
+                await asyncio.wait_for(process.wait(), 10)
+
     async def test_real_app_startup_writes_ready_and_disabled_schedule_to_stdout(self):
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as temp:
@@ -95,7 +126,7 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
                         if "Interface e API prontas" in line:
                             break
                 output = "".join(lines)
-                self.assertIn("HA Backup Steward 0.1.5 a iniciar", output)
+                self.assertIn("HA Backup Steward 0.1.6 a iniciar", output)
                 self.assertIn("modo=observação", output)
                 self.assertIn("Agenda disponível e pronta: DESATIVADA", output)
                 self.assertNotIn("fixture-startup-token", output)

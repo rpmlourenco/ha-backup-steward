@@ -21,7 +21,7 @@ async def main():
     telemetry.configure(cfg["timezone"])
     telemetry.event(f"HA Backup Steward {VERSION} a iniciar")
     state = State(directory)
-    if state.data.get("state") in ("running", "recovering"):
+    if state.data.get("state") in ("running", "recovering", "destination_mounting", "destination_mounted"):
         state.update(state="interrupted", stage="recovery_required")
     telemetry.announce_policy(cfg)
     if state.data.get("needs_cleanup"):

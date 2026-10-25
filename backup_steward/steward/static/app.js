@@ -9,6 +9,9 @@ const labels = {
   success: "Proteção em dia",
   failed: "Precisa da tua atenção",
   interrupted: "Execução interrompida",
+  destination_mounting: "A ligar e montar o destino",
+  destination_mounted: "Destino montado manualmente",
+  destination_off: "Destino desligado em segurança",
 };
 const phases = {
   pending: "A aguardar",
@@ -23,6 +26,8 @@ const operationLabels = {
   backup_checksum: "Backup com checksum integral",
   checksum: "Verificar integridade",
   recover: "Concluir fecho seguro",
+  destination_mount: "Ligar e montar o destino",
+  destination_shutdown: "Desmontar e desligar o destino",
 };
 function stamp(value) {
   return value
@@ -66,11 +71,16 @@ async function refresh() {
       "O estado anterior não confirma que um backup terminou. Volta a verificar dentro de momentos.";
     $("run").disabled = true;
     $("verify").disabled = true;
+    $("destination-mount").disabled =
+      $("destination-shutdown").disabled =
+      $("recover").disabled =
+        true;
   }
 }
 function render() {
   const s = current.state;
   const recovery = s.recovery_required ?? (s.needs_cleanup && !current.busy);
+  const manual = s.state === "destination_mounted" && !current.busy;
   $("version").textContent = `v${current.version}`;
   $("mode").textContent = {
     observe: "Modo de observação",
@@ -81,9 +91,13 @@ function render() {
     current.mode === "observe"
       ? "Só observação"
       : current.busy
-        ? s.state === "recovering"
-          ? "Recuperação em curso"
-          : "Backup em curso"
+        ? s.state === "destination_mounting"
+          ? labels.destination_mounting
+          : s.state === "recovering"
+            ? s.destination_manual
+              ? "Fecho do destino em curso"
+              : "Recuperação em curso"
+            : "Backup em curso"
         : labels[s.state] || s.state;
   $("status-badge").dataset.tone =
     current.mode === "observe" ? "observe" : s.state;
@@ -91,18 +105,22 @@ function render() {
     ? "Vamos fechar o disco em segurança."
     : current.busy
       ? "Estamos a cuidar dos teus dados."
-      : s.state === "success"
-        ? "Tudo guardado. Podes respirar."
-        : current.mode === "observe"
-          ? "Conhece a tua próxima rede de segurança."
-          : "Pronto para a próxima cópia.";
+      : manual
+        ? "O destino está disponível."
+        : s.state === "success"
+          ? "Tudo guardado. Podes respirar."
+          : current.mode === "observe"
+            ? "Conhece a tua próxima rede de segurança."
+            : "Pronto para a próxima cópia.";
   $("hero-description").textContent = recovery
     ? "A execução precisa de recuperação. A tomada só será desligada depois de o fecho seguro ser confirmado."
-    : current.mode === "observe"
-      ? "Explora as definições e prepara os discos. Neste modo, a app não inicia cópias nem altera a tomada."
-      : current.busy
-        ? "Podes acompanhar as etapas aqui. A app continua a trabalhar se reiniciares o Home Assistant."
-        : "As cópias são verificadas antes de o disco offline ser desmontado e desligado.";
+    : manual
+      ? "O disco está montado manualmente. Quando terminares, usa Desmontar e desligar para o fechar em segurança."
+      : current.mode === "observe"
+        ? "Explora as definições e prepara os discos. Neste modo, a app não inicia cópias nem altera a tomada."
+        : current.busy
+          ? "Podes acompanhar as etapas aqui. A app continua a trabalhar se reiniciares o Home Assistant."
+          : "As cópias são verificadas antes de o disco offline ser desmontado e desligado.";
   $("banner").hidden =
     current.busy ||
     (!recovery && s.state !== "failed" && s.retention !== "failed");
@@ -115,6 +133,12 @@ function render() {
     current.busy || current.mode === "observe" || s.needs_cleanup;
   $("recover").hidden = !recovery;
   $("recover").disabled = current.busy || current.mode === "observe";
+  $("destination-mount").disabled =
+    current.busy || current.mode === "observe" || !!s.needs_cleanup;
+  $("destination-shutdown").disabled =
+    current.busy || current.mode === "observe" || !s.needs_cleanup;
+  $("destination-status").textContent =
+    `${current.destination_mount || "Destino"} · ${manual ? "Ligado e montado manualmente" : s.state === "destination_mounting" ? "A ligar e montar" : s.needs_cleanup ? "Fecho seguro pendente" : s.state === "destination_off" ? "Desligado em segurança" : "Disponível para montagem manual"}`;
   $("next-run").textContent = current.schedule_enabled
     ? stamp(current.next_run)
     : "Agenda desativada";
@@ -138,14 +162,19 @@ function render() {
       .querySelector(`[data-step="${key}"]`)
       .classList.toggle("complete", ["delivered", "success"].includes(val));
   }
-  $("cleanup-state").textContent = s.needs_cleanup
-    ? "Por confirmar"
-    : s.state === "success"
-      ? "Disco desligado"
-      : "A aguardar";
+  $("cleanup-state").textContent = manual
+    ? "Montado manualmente"
+    : s.needs_cleanup
+      ? "Por confirmar"
+      : ["success", "destination_off"].includes(s.state)
+        ? "Disco desligado"
+        : "A aguardar";
   document
     .querySelector('[data-step="cleanup"]')
-    .classList.toggle("complete", s.state === "success" && !s.needs_cleanup);
+    .classList.toggle(
+      "complete",
+      ["success", "destination_off"].includes(s.state) && !s.needs_cleanup,
+    );
   $("retention-note").textContent =
     `Conserva ${current.daily_retention_days} backups L2. Com uma cópia diária, isso representa cerca de ${current.daily_retention_days} dias de recuperação. O histórico L3 tem uma retenção própria.`;
   const list = $("events");
@@ -182,27 +211,42 @@ function confirmOperation(mode) {
   pending = mode;
   $("confirm-title").textContent = operationLabels[mode];
   $("confirm-description").textContent =
-    mode === "recover"
-      ? "A app vai verificar o trabalho anterior e tentar concluir o fecho seguro do disco."
-      : current.mode === "test"
-        ? "A execução usará a área de teste separada e não aplicará retenção. Vai ligar o destino e criar ou verificar cópias reais."
-        : mode === "checksum"
-          ? "Esta verificação lê as origens e o espelho por completo. Pode demorar várias horas. Não cria uma nova cópia."
-          : "A app vai criar o L2, copiar os dados para L3 e fechar o disco em segurança. A política de retenção configurada será aplicada.";
+    mode === "destination_mount"
+      ? "A app vai ligar a tomada e montar o destino. Não será feito nenhum backup. O disco fica ligado até pedires o fecho seguro."
+      : mode === "destination_shutdown"
+        ? "A app vai sincronizar e desmontar o destino. Só desligará a tomada depois de confirmar o fecho seguro. Fecha primeiro os ficheiros e aplicações que estejam a usar o destino."
+        : mode === "recover"
+          ? "A app vai verificar o trabalho anterior e tentar concluir o fecho seguro do disco."
+          : current.mode === "test"
+            ? "A execução usará a área de teste separada e não aplicará retenção. Vai ligar o destino e criar ou verificar cópias reais."
+            : mode === "checksum"
+              ? "Esta verificação lê as origens e o espelho por completo. Pode demorar várias horas. Não cria uma nova cópia."
+              : "A app vai criar o L2, copiar os dados para L3 e fechar o disco em segurança. A política de retenção configurada será aplicada.";
   $("confirm").showModal();
 }
 $("run").onclick = () => confirmOperation("backup");
 $("verify").onclick = () => confirmOperation("checksum");
 $("recover").onclick = () => confirmOperation("recover");
+$("destination-mount").onclick = () => confirmOperation("destination_mount");
+$("destination-shutdown").onclick = () =>
+  confirmOperation("destination_shutdown");
 $("cancel-confirm").onclick = () => $("confirm").close();
 $("accept-confirm").onclick = async () => {
   const mode = pending;
   $("confirm").close();
   try {
     await api(
-      mode === "recover" ? "recover" : "run",
+      mode.startsWith("destination_")
+        ? "destination"
+        : mode === "recover"
+          ? "recover"
+          : "run",
       "POST",
-      mode === "recover" ? {} : { mode },
+      mode.startsWith("destination_")
+        ? { action: mode.replace("destination_", "") }
+        : mode === "recover"
+          ? {}
+          : { mode },
     );
     toast("Pedido aceite. Podes acompanhar a execução aqui.");
     await refresh();
