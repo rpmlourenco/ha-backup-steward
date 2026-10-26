@@ -4,7 +4,7 @@
 
 Encrypted Home Assistant backups, verified offline copies, and safe disk shutdown — packaged as one app with a lightweight companion integration.
 
-> **Experimental 0.1.10.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
+> **Experimental 0.1.11.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
 
 ![Backup Steward interface](docs/images/overview.png)
 
@@ -81,7 +81,7 @@ The FileBrowser startup hook and any unrelated packaged applications are out of 
 
 ### Manual backup and cancellation
 
-**Fazer backup** offers automatic checksum policy, **Sem checksum integral** (`backup_only`) and full checksum (`backup_checksum`). The automatic option preserves catch-up for overdue checks. `backup_only` always skips the full source/mirror SHA-256 pass, even when overdue; normal copy size checks, L2 archive SHA-256, native archive validation, retention safeguards and safe disk closure remain enforced. The integration exposes a dedicated manual button and the same run action mode.
+The always-visible **Verificação neste backup** selector, above **Fazer backup**, offers automatic checksum policy, **Sem checksum integral** (`backup_only`) and full checksum (`backup_checksum`). The chosen mode is captured before the confirmation dialog opens, whose title and description identify that exact operation. The automatic option preserves catch-up for overdue checks. `backup_only` always skips the full source/mirror SHA-256 pass, even when overdue; normal copy size checks, L2 archive SHA-256, native archive validation, retention safeguards and safe disk closure remain enforced. The integration exposes a dedicated manual button and the same run action mode.
 
 **Cancelar execução** stops an active backup or verification through the app or integration button. Copy/checksum subprocesses and downloads are interrupted and awaited. Native backup creation, mount/power transitions and an already running L2 retention step must finish before cancellation can proceed. Native job timeout/unknown outcomes keep power and recovery ownership; cancellation never force-cuts power. Cancellation is unavailable once finalization/history expiry and safe shutdown have begun.
 

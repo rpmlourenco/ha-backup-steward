@@ -3,6 +3,7 @@
 import asyncio
 from datetime import datetime, timezone
 import json
+import hashlib
 import os
 from pathlib import Path
 import secrets
@@ -43,6 +44,16 @@ def application(engine, ingress=False):
             return web.json_response({"error": safe_error(error)}, status=400)
 
     app = web.Application(middlewares=[authorize], client_max_size=64 * 1024)
+
+    async def cache_policy(request, response):
+        if (
+            request.path == "/"
+            or request.path.startswith("/v1/")
+            or request.path in ("/static/app.js", "/static/style.css")
+        ):
+            response.headers["Cache-Control"] = "no-store"
+
+    app.on_response_prepare.append(cache_policy)
 
     async def status(request):
         now = datetime.now(timezone.utc)
@@ -115,9 +126,28 @@ def application(engine, ingress=False):
 
     app.router.add_post("/v1/destination", destination)
     if ingress:
+        # Content-addressed paths keep each document paired with its own UI assets.
+        assets = {}
+        html = (STATIC / "index.html").read_text(encoding="utf-8")
+        for name, content_type in (("app.js", "text/javascript"), ("style.css", "text/css")):
+            data = (STATIC / name).read_bytes()
+            digest = hashlib.sha256(data).hexdigest()
+            path = f"static/{digest}/{name}"
+            assets["/" + path] = (data, content_type)
+            html = html.replace("static/" + name, path)
 
         async def index(request):
-            return web.FileResponse(STATIC / "index.html")
+            return web.Response(text=html, content_type="text/html")
+
+        async def asset(request):
+            item = assets.get(request.path)
+            if item is None:
+                raise web.HTTPNotFound()
+            return web.Response(
+                body=item[0],
+                content_type=item[1],
+                headers={"Cache-Control": "public, max-age=31536000, immutable"},
+            )
 
         async def config(request):
             if request.method == "GET":
@@ -144,6 +174,7 @@ def application(engine, ingress=False):
         app.router.add_get("/v1/config", config)
         app.router.add_put("/v1/config", config)
         app.router.add_post("/v1/pair", pairing)
+        app.router.add_get("/static/{digest}/{name}", asset)
         app.router.add_static("/static/", STATIC)
     return app
 

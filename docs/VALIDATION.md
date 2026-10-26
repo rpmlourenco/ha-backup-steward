@@ -80,3 +80,10 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
 - Official Home Assistant 2026.10.3 smoke passes with 19 entities, manual backup_only requests, authenticated cancellation and availability transitions.
 - Local browser tests cover manual backup policy selection/reset, cancellation confirmation/request, pending and completed cancellation states, area selection and desktop/mobile layouts. ARM64 build passes. All execution tests use fake APIs/hardware and temporary files.
 - No running production job was cancelled or otherwise changed during implementation. The prior reported production failure remains a separate diagnosis.
+
+## 0.1.11 follow-up
+
+- 124 isolated tests pass. HTTP regression tests require uncached HTML/API responses, fresh HTML despite old validators, allowlisted content-addressed assets and changed script URLs even when modification time and size are unchanged.
+- A local browser test using the actual aiohttp application reproduces the absent choice with the 0.1.9 frontend, then upgrades the document while an obsolete unversioned script remains intercepted. The new document requests its content-addressed script and successfully submits backup_only, backup_checksum and automatic backup modes.
+- Desktop/mobile layout checks, official Home Assistant 2026.10.3 smoke (19 entities) and ARM64 image build pass. Browser execution uses a temporary container with a mocked engine start method; no production action is possible.
+- Read-only production HTTP checks confirmed that the 0.1.10 server was returning its current HTML/JavaScript bytes. The actual desktop browser DOM could not be inspected because Computer Use blocked URL identification; the user's specific client-side cause is not established. The UI choice is now permanently visible and asset-version mixing is prevented prospectively.

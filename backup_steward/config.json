@@ -1,6 +1,6 @@
 {
   "name": "HA Backup Steward",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "slug": "backup_steward",
   "description": "Backups L2/L3, offline disks and integrity checks in one app. Experimental; observe-only by default.",
   "url": "https://github.com/rpmlourenco/ha-backup-steward",

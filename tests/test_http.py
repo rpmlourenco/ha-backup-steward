@@ -149,6 +149,70 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 202)
             start.assert_called_once_with("mount")
 
+    async def test_ui_document_and_api_are_not_cached_and_assets_are_content_addressed(self):
+        import hashlib
+        import re
+
+        with patch.dict("os.environ", {"STEWARD_INGRESS_IP": "127.0.0.1"}):
+            client = TestClient(TestServer(application(self.engine, ingress=True)))
+            await client.start_server()
+            self.addAsyncCleanup(client.close)
+            response = await client.get(
+                "/", headers={"If-None-Match": "*", "If-Modified-Since": "Wed, 31 Dec 2099 23:59:59 GMT"}
+            )
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+            html = await response.text()
+            self.assertNotIn('id="backup-policy" hidden', html)
+            self.assertLess(html.index('id="backup-verification"'), html.index('id="run"'))
+            self.assertNotIn('src="static/app.js"', html)
+            self.assertNotIn('href="static/style.css"', html)
+            paths = re.findall(r'(?:src|href)="(static/([a-f0-9]{64})/(?:app.js|style.css))"', html)
+            self.assertEqual(len(paths), 2)
+            for path, digest in paths:
+                asset = await client.get("/" + path)
+                self.assertEqual(asset.status, 200)
+                content = await asset.read()
+                self.assertEqual(hashlib.sha256(content).hexdigest(), digest)
+                self.assertIn("immutable", asset.headers["Cache-Control"])
+            unknown = await client.get("/static/" + "0" * 64 + "/app.js")
+            self.assertEqual(unknown.status, 404)
+            status = await client.get("/v1/status")
+            self.assertEqual(status.headers["Cache-Control"], "no-store")
+            legacy = await client.get("/static/app.js")
+            self.assertEqual(legacy.headers["Cache-Control"], "no-store")
+
+    async def test_ui_asset_url_changes_with_contents_even_when_mtime_and_size_match(self):
+        import os
+        import re
+        from steward.server import STATIC
+
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            patch.dict("os.environ", {"STEWARD_INGRESS_IP": "127.0.0.1"}),
+        ):
+            root = Path(temp)
+            for name in ("index.html", "app.js", "style.css"):
+                (root / name).write_bytes((STATIC / name).read_bytes())
+
+            async def document():
+                with patch("steward.server.STATIC", root):
+                    app = application(self.engine, ingress=True)
+                client = TestClient(TestServer(app))
+                await client.start_server()
+                self.addAsyncCleanup(client.close)
+                return await (await client.get("/")).text()
+
+            first = await document()
+            js = root / "app.js"
+            before = js.stat()
+            data = js.read_bytes()
+            js.write_bytes(data.replace(b"function", b"functioN", 1))
+            os.utime(js, ns=(before.st_atime_ns, before.st_mtime_ns))
+            second = await document()
+            pattern = r"static/[a-f0-9]{64}/app.js"
+            self.assertNotEqual(re.search(pattern, first).group(), re.search(pattern, second).group())
+
     async def test_ingress_rejects_non_supervisor_clients(self):
         client = TestClient(TestServer(application(self.engine, ingress=True)))
         await client.start_server()

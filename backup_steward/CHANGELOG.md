@@ -1,3 +1,9 @@
+# 0.1.11 — Visible backup choices and consistent UI loading
+
+- Move backup verification choices to an always-visible selector above the backup button. Capture the chosen mode before confirmation and describe the exact requested operation.
+- Serve HTML and API responses without caching. Give JavaScript and stylesheet files content-addressed URLs so an updated document requests its own matching assets.
+- Preserve backup/checksum/cancellation behavior, keys, configuration and integration entity IDs.
+
 # 0.1.10 — Manual checksum choice and safe cancellation
 
 - Offer automatic, no full checksum and forced full checksum choices for manual backups. The dedicated backup_only mode bypasses overdue full checks while retaining normal copy/L2 validation and disk safety.
