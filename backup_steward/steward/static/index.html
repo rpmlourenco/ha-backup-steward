@@ -57,6 +57,7 @@
                 >Fazer backup</button
               ><button class="secondary" id="verify" disabled>
                 Verificar integridade</button
+              ><button class="secondary" id="restore" disabled>Restaurar L3</button
               ><button class="secondary" id="cancel-run" disabled hidden>Cancelar execução</button
               ><button class="secondary" id="recover" disabled hidden>
                 Concluir fecho seguro
@@ -391,6 +392,17 @@
         <select id="verification-source" disabled aria-label="Área a verificar"></select>
       </label>
       <p id="verification-scope-note" class="help" hidden>Escolher uma área verifica apenas essa origem e o respetivo espelho. Só a verificação de todas as áreas conta para o checksum integral da agenda.</p>
+      <div id="restore-options" hidden>
+        <fieldset id="restore-sources" disabled>
+          <legend>Áreas a restaurar</legend>
+          <label class="check"><input id="restore-all" type="checkbox" checked>Todas as áreas</label>
+          <div id="restore-area-options"></div>
+        </fieldset>
+        <label class="check"><input id="restore-checksum" type="checkbox" disabled>Validar SHA-256 no final</label>
+        <p class="help">O espelho L3 é copiado para as áreas originais. Para primeiro as aplicações que usam essas áreas. Os ficheiros são escritos diretamente, sem cópia temporária; cancelar pode deixar um restauro parcial. O backup L3 permanece intacto. O L2 restaura-se no Home Assistant.</p>
+        <p id="restore-summary" role="status"></p>
+        <label id="restore-erase-label" class="check" hidden><input id="restore-erase" type="checkbox" disabled>Autorizo apagar todo o conteúdo existente nas áreas indicadas acima antes de restaurar.</label>
+      </div>
       <div class="dialog-actions">
         <button id="cancel-confirm" class="secondary">Cancelar</button
         ><button id="accept-confirm" disabled class="primary">Continuar</button>

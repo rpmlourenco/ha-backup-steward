@@ -19,3 +19,9 @@ The ingress peer override `STEWARD_INGRESS_IP` is for controlled container/UI te
 Report defects through GitHub issues without posting tokens, passwords, complete app data, authenticated URLs or unredacted logs. The project does not automatically upload diagnostics.
 
 Supervisor API role: `manager` is required for read-only background-job polling (`/jobs/<uuid>`), which the `backup` role does not permit. Manager also grants other Supervisor management endpoints, although the adapter only implements the backup/polling/Core calls documented here. Review this permission when updating from 0.1.1. It is not an `admin` token and is never exported to the integration or logs.
+
+## L3 restore boundary
+
+Restore is a two-step authenticated operation: `/v1/restore/preview` accepts exact configured areas and returns a short-lived, single-use preparation token; `/v1/restore/start` requires that token, the exact list of nonempty areas explicitly authorized for deletion and a boolean checksum choice. Tokens expire on app restart, after ten minutes, after consumption, or on configuration change. Ordinary `/v1/run` and schedules cannot start restores.
+
+The backup disk is mounted read-only. Every selected mirror, original root identity, nested mount boundary and space estimate is checked before the first deletion. Cleanup retains each selected root and unlinks children using directory file descriptors without following links. Transfers go from `mirror/<area>` to that exact configured original area with `--inplace`; they never use sync, history expiry or L2 creation. Other areas and the backup mirror are not deletion targets. Applications using selected original areas must be stopped by the operator; concurrent writes are not a supported restore mode.

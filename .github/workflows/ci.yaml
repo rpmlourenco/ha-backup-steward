@@ -51,3 +51,4 @@ jobs:
             python -m playwright install --with-deps chromium
           fi
       - run: python tests/ui_connection.py
+      - run: python tests/ui_restore.py

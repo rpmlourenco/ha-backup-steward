@@ -246,7 +246,7 @@ class Disks:
         state = await self.host.unit(name)
         return bool(state and state["ActiveState"] in ("active", "activating", "deactivating"))
 
-    async def mount(self):
+    async def mount(self, read_only=False):
         uuid = self.cfg["destination_uuid"]
         device = Path("/dev/disk/by-uuid") / uuid
         for _ in range(self.cfg["device_wait_seconds"]):
@@ -269,7 +269,7 @@ class Disks:
                 ("What", "s", str(device)),
                 ("Where", "s", host_path),
                 ("Type", "s", "ext4"),
-                ("Options", "s", "rw,noatime,nosuid,nodev,noexec"),
+                ("Options", "s", ("ro" if read_only else "rw") + ",noatime,nosuid,nodev,noexec"),
                 ("CollectMode", "s", "inactive-or-failed"),
             ],
         )

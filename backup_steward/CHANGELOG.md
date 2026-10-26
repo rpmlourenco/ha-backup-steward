@@ -1,3 +1,12 @@
+# 0.1.14 — Restore L3 by area
+
+- Restore the current L3 mirror to all original areas, one area or a selected combination from the app UI.
+- Prepare the selection first; require explicit confirmation before clearing nonempty areas. Bind the single-use preparation to the selected roots, configuration and a ten-minute expiry.
+- Validate every selected mirror and area, reject unsafe trees and estimate available space before deletion. Mount L3 read-only and write restored files directly with `--inplace`, without a temporary duplicate.
+- Always verify restored sizes and optionally compare full SHA-256 after copying. Preserve the existing integrity error budget, safe cancellation and final disk shutdown.
+- Do not create or restore L2, apply retention, replace the last backup summary or advance backup/checksum dates. L2 restore remains available directly through Home Assistant.
+- Add isolated restore, API, mount and desktop/mobile UI regressions. Stop applications using selected original areas before restore; cancellation or failure can leave a partial restore while the L3 mirror remains intact.
+
 # 0.1.13 — Keep backup results separate from verification
 
 - Persist the latest backup outcome (L2, L3, retention and safe shutdown) independently of later integrity checks or manual disk controls.

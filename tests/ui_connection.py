@@ -26,6 +26,7 @@ base = f"http://127.0.0.1:{server.server_port}/"
 actions = (
     "run",
     "verify",
+    "restore",
     "cancel-run",
     "recover",
     "destination-mount",
@@ -40,7 +41,7 @@ actions = (
 
 def status(busy):
     return {
-        "version": "0.1.13",
+        "version": "0.1.14",
         "busy": busy,
         "can_cancel": busy,
         "mode": "production",

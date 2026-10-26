@@ -76,7 +76,17 @@ class Engine:
 
         return start(self, action)
 
-    async def run(self, mode, scheduled_date=None, *, source=None, control=None):
+    async def preview_restore(self, sources=None):
+        from .restore import preview
+
+        return await preview(self, sources)
+
+    def start_restore(self, token, erase_sources, checksum):
+        from .restore import start
+
+        return start(self, token, erase_sources, checksum)
+
+    async def run(self, mode, scheduled_date=None, *, source=None, control=None, restore_options=None):
         async with self.lock:
             control = control or RunControl()
             self.control = control
@@ -85,14 +95,23 @@ class Engine:
             state = self.state
             host = self.host_factory(state.identity["instance_id"])
             disks = self.disks_factory(cfg, host)
+            is_backup = mode in ("backup", "backup_only", "backup_checksum")
             copier = self.copier_factory(
                 cfg, disks, state.event, lambda report: state.update(integrity=report)
             )
+            if mode == "restore":
+                from .restore import Restorer
+
+                copier = Restorer(
+                    cfg, disks, state.event, lambda report: state.update(integrity=report), restore_options
+                )
             run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             checksum = mode in ("backup_checksum", "checksum") or (
                 mode == "backup"
                 and checksum_due(datetime.now(timezone.utc), cfg, state.data.get("last_checksum"))
             )
+            if mode == "restore":
+                checksum = restore_options["checksum"]
             test = cfg["execution_mode"] == "test"
             cleanup_needed = False
             backup_pending = False
@@ -104,11 +123,13 @@ class Engine:
                     run_id=run_id,
                     mode=mode,
                     verification_source=source,
+                    restore_areas=[a["source"] for a in restore_options["areas"]] if restore_options else [],
+                    restore_checksum=checksum if mode == "restore" else None,
                     execution_mode=cfg["execution_mode"],
                     events=[],
-                    l2="pending" if mode != "checksum" else "skipped",
+                    l2="pending" if is_backup else "skipped",
                     l3="pending",
-                    retention="pending" if mode != "checksum" else "not_applicable",
+                    retention="pending" if is_backup else "not_applicable",
                     l2_removed=None,
                     config_snapshot=public_config(cfg),
                     error=None,
@@ -122,9 +143,10 @@ class Engine:
                     integrity=None,
                     cancel_requested=control.requested,
                 )
-                copier.plan_checks(
-                    include_copy=mode != "checksum", include_full=checksum, test=test, source=source
-                )
+                if mode != "restore":
+                    copier.plan_checks(
+                        include_copy=is_backup, include_full=checksum, test=test, source=source
+                    )
                 control.checkpoint()
                 state.event("preflight", "A validar permissões, ausência de concorrência, discos e journal")
                 await self.api.preflight(cfg)
@@ -141,13 +163,30 @@ class Engine:
                 state.update(needs_cleanup=True)
                 state.event("power", "A ligar a tomada do destino")
                 await self.api.power(cfg["power_entity"], True)
-                state.event("mount", "A montar e validar o disco de destino")
-                await disks.mount()
+                state.event(
+                    "mount",
+                    "A montar e validar o L3 em modo de leitura"
+                    if mode == "restore"
+                    else "A montar e validar o disco de destino",
+                )
+                if mode == "restore":
+                    await disks.mount(read_only=True)
+                else:
+                    await disks.mount()
                 state.event("mount_ready", "Destino montado e acessível; a verificar espaço livre")
-                if shutil.disk_usage(cfg["destination_mount"]).free < cfg["min_free_gib"] * 1024**3:
+                if (
+                    mode != "restore"
+                    and shutil.disk_usage(cfg["destination_mount"]).free < cfg["min_free_gib"] * 1024**3
+                ):
                     raise RuntimeError("Destination free space is below policy")
                 control.checkpoint()
-                if mode != "checksum":
+                if mode == "restore":
+                    state.event(
+                        "restore_preflight", "A validar todos os espelhos, áreas e espaço antes de apagar"
+                    )
+                    await control.interruptible(copier.prepare())
+                    await control.interruptible(copier.restore())
+                if is_backup:
                     state.event("l2_create", "A criar o L2 nativo, comprimido e encriptado")
                     name = f"HA Backup Steward L2 {run_id} {secrets.token_hex(4)}"
                     state.update(backup_name=name)
@@ -207,15 +246,20 @@ class Engine:
                     await control.interruptible(copier.copy(run_id, test))
                 control.checkpoint()
                 if checksum:
-                    state.event("checksum", f"A comparar SHA-256: {source or 'todas as origens'}")
+                    scope = (
+                        ", ".join(state.data["restore_areas"])
+                        if mode == "restore"
+                        else source or "todas as origens"
+                    )
+                    state.event("checksum", f"A comparar SHA-256: {scope}")
                     await control.interruptible(copier.checksum(test, source=source))
                 control.checkpoint()
                 copier.finish_checks()
                 control.accepting = False
                 # A partial or failed report never advances the production calendar.
-                if checksum and not test and source is None:
+                if checksum and not test and source is None and mode != "restore":
                     state.update(last_checksum=datetime.now(timezone.utc).isoformat())
-                if mode != "checksum" and not test:
+                if is_backup and not test:
                     await disks.validate_destination()
                     await asyncio.to_thread(copier.prune_history)
                 state.update(l3="success")
@@ -232,7 +276,7 @@ class Engine:
                     stage="complete",
                     last_success=(
                         datetime.now(timezone.utc).isoformat()
-                        if source is None
+                        if source is None and mode != "restore"
                         else state.data.get("last_success")
                     ),
                 )
@@ -320,7 +364,7 @@ class Engine:
                             "Fecho seguro não confirmado; alimentação mantida: "
                             + telemetry.redact(str(cleanup_error))[:240],
                         )
-                if mode != "checksum":
+                if is_backup:
                     state.remember_backup()
                 # Keep the lease during an uncertain native backup or incomplete physical cleanup.
                 if not state.data.get("needs_cleanup"):

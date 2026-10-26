@@ -10,6 +10,31 @@ from steward.disks import Disks, Host
 
 
 class DiskTests(unittest.IsolatedAsyncioTestCase):
+    async def test_restore_mount_is_read_only_and_backup_default_remains_read_write(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temp:
+            cfg = dict(DEFAULTS, destination_mount=str(Path(temp).resolve()), destination_uuid="fixture-uuid")
+            real_exists = Path.exists
+            for readonly in (False, True):
+                host = AsyncMock()
+                disks = Disks(cfg, host)
+                disks.mount_unit = AsyncMock(return_value=("fixture.mount", "/host/fixture"))
+                disks.validate_destination = AsyncMock(return_value="/dev/fixture")
+                with (
+                    patch.object(
+                        Path,
+                        "exists",
+                        lambda path: (
+                            True if str(path).startswith("/dev/disk/by-uuid/") else real_exists(path)
+                        ),
+                    ),
+                    patch("steward.disks.command", new=AsyncMock(return_value="ext4")),
+                ):
+                    await disks.mount(read_only=readonly)
+                properties = {k: v for k, _, v in host.start.call_args.args[1]}
+                self.assertEqual(properties["Options"].split(",")[0], "ro" if readonly else "rw")
+
     async def removal_fixture(self, events):
         cfg = dict(DEFAULTS, destination_uuid="fixture-uuid")
         disks = Disks(cfg, AsyncMock())

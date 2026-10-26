@@ -252,6 +252,10 @@ class Copier:
         )
         return self.integrity.finish()
 
+    def check_paths(self, source, target):
+        confined(source, source)
+        confined(target, Path(self.cfg["destination_mount"]))
+
     async def verify(self, source, target, kind, test=False):
         area = self.integrity.plan(source, target, kind)
         self.integrity.begin(area)
@@ -264,8 +268,7 @@ class Copier:
                 "integrity_area_failed", f"{kind}: {source}; origem ou destino ausente; a continuar"
             )
             return
-        confined(source, source)
-        confined(target, Path(self.cfg["destination_mount"]))
+        self.check_paths(source, target)
         try:
             if not count_files(source):
                 self.integrity.problem(area, None, "unavailable", "Origem vazia; verificação recusada")

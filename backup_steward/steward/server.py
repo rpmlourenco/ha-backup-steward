@@ -88,6 +88,19 @@ def application(engine, ingress=False):
             engine.start(body["mode"])
         return web.json_response({"accepted": True}, status=202)
 
+    async def restore_preview(request):
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) - {"sources"}:
+            raise ValueError("Expected only optional configured sources")
+        return web.json_response(await engine.preview_restore(body.get("sources")))
+
+    async def restore_start(request):
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) != {"token", "erase_sources", "checksum"}:
+            raise ValueError("Expected restore confirmation and checksum choice")
+        engine.start_restore(body["token"], body["erase_sources"], body["checksum"])
+        return web.json_response({"accepted": True}, status=202)
+
     async def recover(request):
         if engine.busy:
             raise ValueError("Another operation is active")
@@ -112,6 +125,8 @@ def application(engine, ingress=False):
         engine.cancel()
         return web.json_response({"accepted": True}, status=202)
 
+    app.router.add_post("/v1/restore/preview", restore_preview)
+    app.router.add_post("/v1/restore/start", restore_start)
     app.router.add_post("/v1/cancel", cancel)
     app.router.add_get("/v1/status", status)
     app.router.add_post("/v1/run", run)

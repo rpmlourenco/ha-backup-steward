@@ -31,6 +31,36 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
     def auth(self):
         return {"Authorization": "Bearer " + self.state.identity["api_token"]}
 
+    async def test_restore_endpoints_require_authentication_and_exact_contract(self):
+        response = await self.client.post("/v1/restore/preview", json={})
+        self.assertEqual(response.status, 401)
+        response = await self.client.post("/v1/restore/start", json={})
+        self.assertEqual(response.status, 401)
+        with patch.object(
+            self.engine, "preview_restore", new=AsyncMock(return_value={"areas": [], "token": "fixture"})
+        ) as preview:
+            response = await self.client.post(
+                "/v1/restore/preview", headers=self.auth(), json={"sources": ["/media/immich"]}
+            )
+            self.assertEqual(response.status, 200)
+            preview.assert_awaited_once_with(["/media/immich"])
+            response = await self.client.post(
+                "/v1/restore/preview", headers=self.auth(), json={"path": "/etc"}
+            )
+            self.assertEqual(response.status, 400)
+        with patch.object(self.engine, "start_restore") as start:
+            response = await self.client.post(
+                "/v1/restore/start",
+                headers=self.auth(),
+                json={"token": "fixture", "erase_sources": [], "checksum": False},
+            )
+            self.assertEqual(response.status, 202)
+            start.assert_called_once_with("fixture", [], False)
+            response = await self.client.post(
+                "/v1/restore/start", headers=self.auth(), json={"token": "fixture", "checksum": False}
+            )
+            self.assertEqual(response.status, 400)
+
     async def test_status_requires_pairing_token(self):
         response = await self.client.get("/v1/status")
         self.assertEqual(response.status, 401)
@@ -222,7 +252,7 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
                 self.disabled = {}
 
             def handle_starttag(self, tag, attrs):
-                if tag in ("button", "select"):
+                if tag in ("button", "select", "fieldset"):
                     attrs = dict(attrs)
                     if "id" in attrs:
                         self.disabled[attrs["id"]] = "disabled" in attrs
@@ -247,6 +277,8 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
                 "copy-token",
                 "backup-verification",
                 "verification-source",
+                "restore",
+                "restore-sources",
             ):
                 self.assertTrue(parser.disabled[control], control)
             self.assertFalse(parser.disabled["cancel-confirm"])

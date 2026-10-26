@@ -3,10 +3,13 @@ const $ = (id) => document.getElementById(id);
 let current = null,
   config = null,
   pending = null,
+  restorePreview = null,
+  preparingRestore = false,
+  restoreRequestSequence = 0,
   statusReady = false,
   statusRequestPending = false,
   refreshSequence = 0;
-const statusControls = ["run", "verify", "cancel-run", "recover", "destination-mount", "destination-shutdown", "settings-toggle", "accept-confirm", "pair", "config-save", "copy-token", "backup-verification", "verification-source"];
+const statusControls = ["restore", "restore-sources", "restore-checksum", "restore-erase", "run", "verify", "cancel-run", "recover", "destination-mount", "destination-shutdown", "settings-toggle", "accept-confirm", "pair", "config-save", "copy-token", "backup-verification", "verification-source"];
 function lockControls() {
   for (const id of statusControls) $(id).disabled = true;
 }
@@ -16,7 +19,7 @@ function operationAvailable(mode) {
   if (current.busy) return false;
   if (mode === "recover") return !!current.state.recovery_required;
   if (mode === "destination_shutdown") return current.state.needs_cleanup;
-  return ["backup", "backup_only", "backup_checksum", "checksum", "destination_mount"].includes(mode) && !current.state.needs_cleanup;
+  return ["backup", "backup_only", "backup_checksum", "checksum", "restore", "destination_mount"].includes(mode) && !current.state.needs_cleanup;
 }
 const labels = {
   idle: "Tudo pronto",
@@ -45,6 +48,7 @@ const operationLabels = {
   backup_checksum: "Backup com checksum integral",
   checksum: "Verificar integridade",
   recover: "Concluir fecho seguro",
+  restore: "Restaurar L3",
   destination_mount: "Ligar e montar o destino",
   destination_shutdown: "Desmontar e desligar o destino",
 };
@@ -134,7 +138,7 @@ function render() {
             ? s.destination_manual
               ? "Fecho do destino em curso"
               : "Recuperação em curso"
-            : s.mode === "checksum" ? "Verificação em curso" : "Backup em curso"
+            : s.mode === "restore" ? "Restauro em curso" : s.mode === "checksum" ? "Verificação em curso" : "Backup em curso"
         : labels[s.state] || s.state;
   $("status-badge").dataset.tone =
     current.mode === "observe" ? "observe" : s.state;
@@ -163,6 +167,11 @@ function render() {
     $("hero-title").textContent = current.busy ? "Estamos a verificar os teus dados." : "Verificação concluída.";
     $("hero-description").textContent = `Área: ${s.verification_source || "Todas as origens"}. ${s.verification_source ? "Esta verificação parcial não substitui a verificação integral agendada." : "Verificação integral das origens configuradas."}`;
   }
+  if (!recovery && !manual && s.mode === "restore" && ["running", "success"].includes(s.state)) {
+    $("status-label").textContent = current.busy ? "Restauro em curso" : "Restauro concluído";
+    $("hero-title").textContent = current.busy ? "Estamos a restaurar os teus dados." : "Dados restaurados.";
+    $("hero-description").textContent = `Áreas: ${(s.restore_areas || []).join(", ")}. ${s.restore_checksum ? "Inclui SHA-256 no final." : "Com confirmação de tamanhos, sem checksum integral."}`;
+  }
   $("cancel-run").hidden = !current.busy || (!current.can_cancel && !(s.state === "running" && s.cancel_requested));
   $("cancel-run").disabled = !operationAvailable("cancel");
   $("cancel-run").textContent = s.cancel_requested ? "A cancelar…" : "Cancelar execução";
@@ -182,12 +191,16 @@ function render() {
     : s.retention === "failed"
       ? "A cópia L2 foi entregue, mas a retenção precisa de atenção."
       : "A execução não terminou com sucesso. Consulta a atividade e confirma o estado do destino.";
-  $("run").disabled = $("verify").disabled =
+  $("restore").disabled = $("run").disabled = $("verify").disabled =
     current.busy || current.mode === "observe" || s.needs_cleanup;
   $("settings-toggle").disabled = !statusReady;
   $("pair").disabled = $("copy-token").disabled = !statusReady;
   $("config-save").disabled = !statusReady || current.busy || s.needs_cleanup;
-  $("accept-confirm").disabled = !operationAvailable(pending);
+  $("accept-confirm").disabled = !operationAvailable(pending) || (pending === "restore" &&
+    (preparingRestore || (restorePreview?.areas.some(a => a.nonempty) && !$("restore-erase").checked)));
+  for (const id of ["restore-sources", "restore-checksum", "restore-erase"]) {
+    $(id).disabled = !operationAvailable("restore") || preparingRestore;
+  }
   $("backup-verification").disabled = !operationAvailable("backup");
   $("verification-source").disabled = !operationAvailable("checksum");
   $("recover").hidden = !recovery;
@@ -243,7 +256,7 @@ function render() {
   $("integrity-report").hidden = !integrity;
   if (integrity) {
     const status = {running: "Verificação em curso", passed: "Verificação concluída", failed: "Verificação concluída com erros", aborted: "Verificação incompleta"}[integrity.status] || integrity.status;
-    $("integrity-summary").textContent = `${status} · ${s.verification_source || "Todas as áreas"} · ${integrity.error_count} erro(s) globais · limite ${integrity.error_limit}${integrity.limit_reached ? " — limite atingido" : ""}`;
+    $("integrity-summary").textContent = `${status} · ${s.mode === "restore" ? "Restauro: " + (s.restore_areas || []).join(", ") : s.verification_source || "Todas as áreas"} · ${integrity.error_count} erro(s) globais · limite ${integrity.error_limit}${integrity.limit_reached ? " — limite atingido" : ""}`;
     const body = $("integrity-areas"); body.replaceChildren();
     for (const area of integrity.areas || []) {
       const row = document.createElement("tr");
@@ -291,6 +304,29 @@ function translate(stage, fallback) {
 function confirmOperation(mode) {
   if (!operationAvailable(mode)) return toast("Aguarda um estado válido e disponível para esta operação.");
   pending = mode;
+  $("restore-options").hidden = mode !== "restore";
+  if (mode === "restore") {
+    restoreRequestSequence++;
+    restorePreview = null;
+    $("restore-checksum").checked = false;
+    $("restore-erase").checked = false;
+    $("restore-erase-label").hidden = true;
+    $("restore-summary").textContent = "Seleciona as áreas e analisa antes de confirmar.";
+    $("restore-all").checked = true;
+    $("restore-area-options").replaceChildren();
+    for (const source of current.verification_sources || []) {
+      const label = document.createElement("label"); label.className = "check";
+      const input = document.createElement("input"); input.type = "checkbox";
+      input.value = source; input.checked = true;
+      input.onchange = () => {
+        $("restore-all").checked = [...$("restore-area-options").querySelectorAll("input")].every(i => i.checked);
+        resetRestoreSelection();
+      };
+      label.append(input, document.createTextNode(source));
+      $("restore-area-options").append(label);
+    }
+    for (const id of ["restore-sources", "restore-checksum", "restore-erase"]) $(id).disabled = false;
+  }
   $("backup-policy").hidden = $("backup-policy-note").hidden = mode !== "backup";
   $("backup-verification").value = "backup";
   $("verification-scope").hidden = $("verification-scope-note").hidden = mode !== "checksum";
@@ -309,9 +345,10 @@ function confirmOperation(mode) {
   }
   $("confirm-title").textContent = operationLabels[mode];
   $("cancel-confirm").textContent = mode === "cancel" ? "Voltar" : "Cancelar";
-  $("accept-confirm").textContent = mode === "cancel" ? "Cancelar execução" : "Continuar";
+  $("accept-confirm").textContent = mode === "restore" ? "Analisar seleção" : mode === "cancel" ? "Cancelar execução" : "Continuar";
   $("confirm-description").textContent =
-    mode === "cancel"
+    mode === "restore" ? "Restaura a cópia atual do espelho L3. A app identifica áreas com conteúdo e pede autorização para as apagar. Não cria backups nem aplica retenção."
+      : mode === "cancel"
       ? "A app vai parar a cópia ou verificação e fechar o disco em segurança. Se o Home Assistant ainda estiver a criar o backup nativo, terá de aguardar que termine. O cancelamento não desfaz ficheiros já copiados ou retenção já aplicada."
       : mode === "destination_mount"
       ? "A app vai ligar a tomada e montar o destino. Não será feito nenhum backup. O disco fica ligado até pedires o fecho seguro."
@@ -329,6 +366,21 @@ function confirmOperation(mode) {
 }
 $("run").onclick = () => confirmOperation("backup");
 $("verify").onclick = () => confirmOperation("checksum");
+$("restore").onclick = () => confirmOperation("restore");
+function resetRestoreSelection() {
+  restoreRequestSequence++;
+  restorePreview = null;
+  $("restore-erase").checked = false;
+  $("restore-erase-label").hidden = true;
+  $("restore-summary").textContent = "A seleção mudou; analisa novamente antes de confirmar.";
+  $("accept-confirm").textContent = "Analisar seleção";
+  render();
+}
+$("restore-all").onchange = () => {
+  for (const input of $("restore-area-options").querySelectorAll("input")) input.checked = $("restore-all").checked;
+  resetRestoreSelection();
+};
+$("restore-erase").onchange = () => render();
 $("cancel-run").onclick = () => confirmOperation("cancel");
 $("recover").onclick = () => confirmOperation("recover");
 $("destination-mount").onclick = () => confirmOperation("destination_mount");
@@ -338,6 +390,43 @@ $("cancel-confirm").onclick = () => $("confirm").close();
 $("accept-confirm").onclick = async () => {
   const mode = pending === "backup" ? $("backup-verification").value : pending;
   if (!operationAvailable(mode)) return toast("O estado da app ainda não permite esta operação.");
+  if (mode === "restore") {
+    if (preparingRestore) return;
+    if (!restorePreview) {
+      const sequence = ++restoreRequestSequence;
+      preparingRestore = true;
+      render();
+      try {
+        const sources = [...$("restore-area-options").querySelectorAll("input:checked")].map(i => i.value);
+        if (!sources.length) throw Error("Seleciona pelo menos uma área.");
+        const plan = await api("restore/preview", "POST", {sources});
+        if (sequence !== restoreRequestSequence || pending !== "restore" || !$("confirm").open) return;
+        restorePreview = plan;
+        const nonempty = plan.areas.filter(a => a.nonempty);
+        $("restore-summary").textContent = nonempty.length
+          ? `Estas áreas têm conteúdo e serão esvaziadas: ${nonempty.map(a => a.source).join(", ")}. Sem autorização, cancela o restauro.`
+          : `Áreas vazias, prontas a receber a cópia: ${plan.areas.map(a => a.source).join(", ")}.`;
+        $("restore-erase-label").hidden = !nonempty.length;
+        $("accept-confirm").textContent = "Restaurar agora";
+      } catch (e) { toast(e.message); }
+      finally { preparingRestore = false; await refresh(); }
+      return;
+    }
+    if (restorePreview.areas.some(a => a.nonempty) && !$("restore-erase").checked) return;
+    preparingRestore = true; render();
+    try {
+      await api("restore/start", "POST", {
+        token: restorePreview.token,
+        erase_sources: restorePreview.areas.filter(a => a.nonempty).map(a => a.source),
+        checksum: $("restore-checksum").checked,
+      });
+      $("confirm").close(); restorePreview = null;
+      toast("Restauro iniciado. Podes acompanhar e cancelar a execução aqui.");
+      await refresh();
+    } catch (e) { toast(e.message); }
+    finally { preparingRestore = false; await refresh(); }
+    return;
+  }
   const source = mode === "checksum" ? $("verification-source").value : "";
   $("confirm").close();
   try {
