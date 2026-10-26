@@ -108,7 +108,8 @@ class Engine:
                     events=[],
                     l2="pending" if mode != "checksum" else "skipped",
                     l3="pending",
-                    retention="pending",
+                    retention="pending" if mode != "checksum" else "not_applicable",
+                    l2_removed=None,
                     config_snapshot=public_config(cfg),
                     error=None,
                     error_detail=None,
@@ -319,6 +320,8 @@ class Engine:
                             "Fecho seguro não confirmado; alimentação mantida: "
                             + telemetry.redact(str(cleanup_error))[:240],
                         )
+                if mode != "checksum":
+                    state.remember_backup()
                 # Keep the lease during an uncertain native backup or incomplete physical cleanup.
                 if not state.data.get("needs_cleanup"):
                     await host.release()
@@ -374,6 +377,8 @@ class Engine:
                     state="destination_off" if manual else "interrupted",
                     stage="recovered",
                 )
+                if not manual:
+                    self.state.remember_backup()
                 await host.release()
                 self.state.event(
                     "recovered",

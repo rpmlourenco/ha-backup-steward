@@ -40,7 +40,7 @@ actions = (
 
 def status(busy):
     return {
-        "version": "0.1.12",
+        "version": "0.1.13",
         "busy": busy,
         "can_cancel": busy,
         "mode": "production",
@@ -156,6 +156,65 @@ try:
         page.wait_for_timeout(50)
         assert page.locator("#run").is_disabled()
         assert page.locator("#status-label").inner_text() == "Backup em curso"
+        # A later area/global verification or manual disk session must not replace backup results.
+        backup = {
+            "run_id": "backup-fixture",
+            "mode": "backup_only",
+            "execution_mode": "production",
+            "state": "success",
+            "l2": "delivered",
+            "l3": "success",
+            "retention": "success",
+            "safe_to_power_off": True,
+            "needs_cleanup": False,
+            "last_success": "2026-10-26T19:36:31+00:00",
+        }
+        for operation in ("checksum", "destination_mounted", "destination_off"):
+            value = status(False)
+            value["state"].update(
+                mode="checksum",
+                state=operation if operation != "checksum" else "success",
+                run_id="later-operation",
+                l2="skipped",
+                l3="success",
+                retention="not_applicable",
+                destination_manual=operation == "destination_mounted",
+                last_backup=backup,
+                last_backup_success=backup["last_success"],
+                last_success="2026-10-27T20:00:00+00:00",
+            )
+            response = hold_refresh()
+            response.fulfill(json=value)
+            page.wait_for_function("!document.getElementById('settings-toggle').disabled")
+            assert page.locator("#run-id").inner_text() == "backup-fixture"
+            assert page.locator("#l2-state").inner_text() == "Concluído"
+            assert page.locator("#l3-state").inner_text() == "Concluída"
+            assert page.locator("#retention-state").inner_text() == "Aplicada"
+            assert page.locator("#cleanup-state").inner_text() == "Disco desligado"
+            assert "26" in page.locator("#last-success").inner_text()
+            assert "Último backup" in page.locator("#backup-summary").inner_text()
+        value = status(True)
+        value["state"].update(
+            run_id="active-backup",
+            mode="backup_only",
+            l2="delivered",
+            l3="pending",
+            retention="success",
+            last_backup=backup,
+        )
+        response = hold_refresh()
+        response.fulfill(json=value)
+        page.wait_for_function("document.getElementById('run-id').textContent==='active-backup'")
+        assert "Backup em curso" in page.locator("#backup-summary").inner_text()
+        assert page.locator("#l3-state").inner_text() == "A aguardar"
+        value = status(False)
+        value["state"].update(mode="checksum", state="success", l2="skipped", retention="pending")
+        response = hold_refresh()
+        response.fulfill(json=value)
+        page.wait_for_function("!document.getElementById('settings-toggle').disabled")
+        assert page.locator("#l2-state").inner_text() == "Sem dados"
+        assert "Ainda sem resultados" in page.locator("#backup-summary").inner_text()
+        assert page.locator("#last-success").inner_text() == "Ainda sem backup registado"
         assert posts == [] and not errors, (posts, errors)
         browser.close()
         print(

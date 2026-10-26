@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backup_steward"))
 from steward.config import validate
 from steward.state import State
 from steward.supervisor import APIError, Supervisor
-from steward import telemetry
+from steward import VERSION, telemetry
 
 
 class LoggingTests(unittest.TestCase):
@@ -126,7 +126,7 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
                         if "Interface e API prontas" in line:
                             break
                 output = "".join(lines)
-                self.assertIn("HA Backup Steward 0.1.12 a iniciar", output)
+                self.assertIn(f"HA Backup Steward {VERSION} a iniciar", output)
                 self.assertIn("modo=observação", output)
                 self.assertIn("Agenda disponível e pronta: DESATIVADA", output)
                 self.assertNotIn("fixture-startup-token", output)

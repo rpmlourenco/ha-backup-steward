@@ -1,3 +1,3 @@
 """HA Backup Steward app. No Auto Backup dependency."""
 
-VERSION = "0.1.12"
+VERSION = "0.1.13"

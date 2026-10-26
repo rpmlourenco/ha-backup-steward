@@ -35,6 +35,7 @@ const phases = {
   success: "Concluído",
   failed: "Por confirmar",
   skipped: "Não solicitado",
+  not_applicable: "Não aplicável",
   disabled_in_test: "Sem apagar · teste",
 };
 const operationLabels = {
@@ -203,7 +204,8 @@ function render() {
   $("schedule-note").textContent = current.schedule_enabled
     ? `Todos os dias, ${current.schedule_time} · ${current.timezone}`
     : "Ativa quando terminares os testes";
-  $("last-success").textContent = stamp(s.last_success);
+  $("last-success").textContent = s.last_backup_success
+    ? stamp(s.last_backup_success) : "Ainda sem backup registado";
   $("checksum-frequency").textContent = {
     monthly: "Mensal",
     weekly: "Semanal",
@@ -211,30 +213,30 @@ function render() {
   }[current.checksum_frequency];
   $("last-checksum").textContent = s.last_checksum
     ? `Último: ${stamp(s.last_checksum)}`
-    : "Ainda não realizada";
-  $("run-id").textContent = s.run_id || "";
+    : "Ainda sem verificação completa de todas as origens";
+  const backupModes = ["backup", "backup_only", "backup_checksum"];
+  const currentBackup = current.busy && s.state === "running" && backupModes.includes(s.mode) && !manual;
+  const backup = currentBackup ? s : s.last_backup;
+  $("backup-summary").textContent = !backup
+    ? "Ainda sem resultados de backup guardados."
+    : current.busy && currentBackup
+      ? "Backup em curso · Da criação ao fecho do disco."
+      : `Último backup${backup.state === "success" ? ` — ${stamp(backup.last_success)}` : " · " + (labels[backup.state] || "Por confirmar")}${backup.execution_mode === "test" ? " · Teste" : ""}`;
+  $("run-id").textContent = backup?.run_id || "";
   for (const key of ["l2", "l3", "retention"]) {
-    const val = s[key];
-    $(`${key}-state`).textContent = phases[val] || "A aguardar";
-    document
-      .querySelector(`[data-step="${key}"]`)
-      .classList.toggle("complete", ["delivered", "success"].includes(val));
+    const val = backup?.[key];
+    $(`${key}-state`).textContent = !backup ? "Sem dados" :
+      key === "retention" && val === "success" ? "Aplicada" :
+      key === "l2" && val === "delivered" ? "Concluído" :
+      key === "l3" && val === "success" ? "Concluída" : phases[val] || "A aguardar";
+    document.querySelector(`[data-step="${key}"]`).classList.toggle(
+      "complete", ["delivered", "success"].includes(val));
   }
-  $("cleanup-state").textContent = manual
-    ? "Montado manualmente"
-    : s.needs_cleanup
-      ? "Por confirmar"
-      : s.state === "cancelled" && !s.safe_to_power_off
-        ? "Não utilizado"
-        : ["success", "cancelled", "destination_off"].includes(s.state)
-        ? "Disco desligado"
-        : "A aguardar";
-  document
-    .querySelector('[data-step="cleanup"]')
-    .classList.toggle(
-      "complete",
-      ["success", "cancelled", "destination_off"].includes(s.state) && !s.needs_cleanup && (s.state !== "cancelled" || s.safe_to_power_off),
-    );
+  const closed = backup && !backup.needs_cleanup && backup.safe_to_power_off;
+  $("cleanup-state").textContent = !backup ? "Sem dados" : closed
+    ? "Disco desligado" : backup.needs_cleanup ? "Por confirmar"
+    : backup.state === "cancelled" ? "Não utilizado" : "A aguardar";
+  document.querySelector('[data-step="cleanup"]').classList.toggle("complete", !!closed);
   $("retention-note").textContent =
     `Conserva ${current.daily_retention_days} backups L2. Com uma cópia diária, isso representa cerca de ${current.daily_retention_days} dias de recuperação. O histórico L3 tem uma retenção própria.`;
   const integrity = s.integrity;

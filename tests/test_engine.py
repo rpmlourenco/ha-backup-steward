@@ -527,6 +527,47 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.copier.checksum.assert_awaited_once()
         self.assertIsNone(self.state.data["last_checksum"])
 
+    async def test_existing_backup_state_migrates_without_inventing_checksum_results(self):
+        self.state.update(
+            mode="backup_only",
+            state="success",
+            execution_mode="production",
+            run_id="legacy-backup",
+            l2="delivered",
+            l3="success",
+            retention="success",
+            last_success="2026-10-26T19:36:31+00:00",
+            safe_to_power_off=True,
+        )
+        restored = State(self.root / "data")
+        self.assertEqual(restored.data["last_backup"]["run_id"], "legacy-backup")
+        self.assertEqual(restored.data["last_backup_success"], self.state.data["last_success"])
+        self.state.data.pop("last_backup", None)
+        self.state.data.pop("last_backup_success", None)
+        self.state.update(mode="checksum", l2="skipped", retention="pending")
+        restored = State(self.root / "data")
+        self.assertNotIn("last_backup", restored.data)
+        self.assertNotIn("last_backup_success", restored.data)
+
+    async def test_verification_preserves_durable_backup_summary(self):
+        self.engine.cfg["execution_mode"] = "production"
+        with patch("steward.engine.prune_l2", return_value=["old.tar"]):
+            await self.run_engine("backup_only")
+        backup = dict(self.state.data["last_backup"])
+        completed = self.state.data["last_backup_success"]
+        self.assertEqual(backup["l2"], "delivered")
+        self.assertEqual(backup["retention"], "success")
+        self.assertEqual(backup["l2_removed"], 1)
+        for source in (self.cfg["source_mount"], None):
+            await self.engine.run("checksum", source=source)
+            self.assertEqual(self.state.data["last_backup"], backup)
+            self.assertEqual(self.state.data["last_backup_success"], completed)
+            self.assertEqual(self.state.data["retention"], "not_applicable")
+            self.assertIsNone(self.state.data["l2_removed"])
+        restored = State(self.root / "data")
+        self.assertEqual(restored.data["last_backup"], backup)
+        self.assertEqual(restored.data["last_backup_success"], completed)
+
     async def test_checksum_only_does_not_create_native_backup(self):
         await self.run_engine("checksum")
         self.api.create_l2.assert_not_awaited()

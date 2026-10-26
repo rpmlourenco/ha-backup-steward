@@ -47,6 +47,14 @@ class State:
             )
         self.identity = json.loads(identity.read_text(encoding="utf-8"))
         telemetry.protect(self.identity["api_token"])
+        # Migrate only an identifiable backup; never infer outcomes from a later checksum.
+        if (
+            "last_backup" not in self.data
+            and self.data.get("mode") in ("backup", "backup_only", "backup_checksum")
+            and not self.data.get("destination_manual")
+            and not str(self.data.get("state", "")).startswith("destination_")
+        ):
+            self.remember_backup()
 
     def update(self, **kwargs):
         previous = {key: self.data.get(key) for key in kwargs}
@@ -95,6 +103,29 @@ class State:
                 )
             )
         telemetry.event(f"{stage}: {message}", self.data.get("run_id"), level)
+
+    def remember_backup(self):
+        """Keep backup outcomes separate from later verification/manual operations."""
+        if self.data.get("mode") not in ("backup", "backup_only", "backup_checksum"):
+            return
+        keys = (
+            "run_id",
+            "mode",
+            "execution_mode",
+            "state",
+            "l2",
+            "l3",
+            "retention",
+            "needs_cleanup",
+            "safe_to_power_off",
+            "last_success",
+            "l2_removed",
+        )
+        snapshot = {key: self.data.get(key) for key in keys}
+        values = {"last_backup": snapshot}
+        if self.data.get("state") == "success" and self.data.get("execution_mode") == "production":
+            values["last_backup_success"] = self.data.get("last_success")
+        self.update(**values)
 
     def public(self, busy=False):
         # Backup job IDs and configuration contain no credentials. No raw API responses are persisted.

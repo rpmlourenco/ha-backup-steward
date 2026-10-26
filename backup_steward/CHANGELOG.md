@@ -1,3 +1,11 @@
+# 0.1.13 — Keep backup results separate from verification
+
+- Persist the latest backup outcome (L2, L3, retention and safe shutdown) independently of later integrity checks or manual disk controls.
+- Show the backup date and operation context in the journey card; update the last successful copy date only after a successful production backup.
+- Mark retention as not applicable for verification-only operations and clear stale per-run removal counts. Retention behavior is unchanged.
+- Clarify that individual-area checks do not count as a complete verification of all sources. Migrate identifiable existing backup results; older results already overwritten by checks remain unavailable until the next backup.
+- Add persistence, migration and browser regressions. Preserve configuration, encryption keys, scheduling, disk safety and integration entity IDs.
+
 # 0.1.12 — Disable operations until status is confirmed
 
 - Disable operation controls in the initial HTML, before JavaScript/status loading, and during pending status reads or connection failure.
