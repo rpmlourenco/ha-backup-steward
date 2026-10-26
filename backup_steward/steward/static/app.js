@@ -74,7 +74,6 @@ async function refresh() {
       "O estado anterior não confirma que um backup terminou. Volta a verificar dentro de momentos.";
     $("run").disabled = true;
     $("verify").disabled = true;
-    $("backup-verification").disabled = true;
     $("cancel-run").disabled = true;
     $("destination-mount").disabled =
       $("destination-shutdown").disabled =
@@ -152,7 +151,6 @@ function render() {
       : "A execução não terminou com sucesso. Consulta a atividade e confirma o estado do destino.";
   $("run").disabled = $("verify").disabled =
     current.busy || current.mode === "observe" || s.needs_cleanup;
-  $("backup-verification").disabled = $("run").disabled;
   $("recover").hidden = !recovery;
   $("recover").disabled = current.busy || current.mode === "observe";
   $("destination-mount").disabled =
@@ -251,8 +249,9 @@ function translate(stage, fallback) {
   );
 }
 function confirmOperation(mode) {
-  if (mode === "backup") mode = $("backup-verification").value;
   pending = mode;
+  $("backup-policy").hidden = $("backup-policy-note").hidden = mode !== "backup";
+  $("backup-verification").value = "backup";
   $("verification-scope").hidden = $("verification-scope-note").hidden = mode !== "checksum";
   if (mode === "checksum") {
     const select = $("verification-source");
@@ -279,10 +278,6 @@ function confirmOperation(mode) {
         ? "A app vai sincronizar e desmontar o destino. Só desligará a tomada depois de confirmar o fecho seguro. Fecha primeiro os ficheiros e aplicações que estejam a usar o destino."
         : mode === "recover"
           ? "A app vai verificar o trabalho anterior e tentar concluir o fecho seguro do disco."
-          : mode === "backup_only"
-            ? "A app vai criar o L2 e copiar os dados para L3 sem checksum integral. Mantém a confirmação de tamanhos, o SHA-256 dos arquivos L2 e o fecho seguro. A retenção só se aplica em produção."
-          : mode === "backup_checksum"
-            ? "A app vai criar o L2, copiar os dados para L3 e executar SHA-256 integral de todas as áreas antes do fecho seguro. Pode demorar várias horas."
           : current.mode === "test"
             ? "A execução usará a área de teste separada e não aplicará retenção. Vai ligar o destino e criar ou verificar cópias reais."
             : mode === "checksum"
@@ -299,7 +294,7 @@ $("destination-shutdown").onclick = () =>
   confirmOperation("destination_shutdown");
 $("cancel-confirm").onclick = () => $("confirm").close();
 $("accept-confirm").onclick = async () => {
-  const mode = pending;
+  const mode = pending === "backup" ? $("backup-verification").value : pending;
   const source = mode === "checksum" ? $("verification-source").value : "";
   $("confirm").close();
   try {

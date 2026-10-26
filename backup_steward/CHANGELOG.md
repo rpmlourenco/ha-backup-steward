@@ -1,8 +1,8 @@
-# 0.1.11 — Visible backup choices and consistent UI loading
+# 0.1.11 — Consistent UI loading after updates
 
-- Move backup verification choices to an always-visible selector above the backup button. Capture the chosen mode before confirmation and describe the exact requested operation.
+- Fix reuse of older UI files after an app update. The affected HTTPS browser was running 0.1.9 HTML/JavaScript against the 0.1.10 API, which concealed the new backup choices.
 - Serve HTML and API responses without caching. Give JavaScript and stylesheet files content-addressed URLs so an updated document requests its own matching assets.
-- Preserve backup/checksum/cancellation behavior, keys, configuration and integration entity IDs.
+- Keep the existing confirmation dialog layout, backup/checksum/cancellation behavior, keys, configuration and integration entity IDs.
 
 # 0.1.10 — Manual checksum choice and safe cancellation
 

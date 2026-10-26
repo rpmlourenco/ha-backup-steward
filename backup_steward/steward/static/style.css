@@ -719,6 +719,3 @@ summary {
 .integrity-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
 .integrity-table th, .integrity-table td { text-align: left; padding: 10px 6px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .integrity-samples { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; padding-left: 18px; }
-
-.backup-options { max-width: 540px; margin: 20px 0; }
-.backup-options .help { margin-bottom: 0; }
