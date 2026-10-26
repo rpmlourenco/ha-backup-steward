@@ -79,11 +79,11 @@ class State:
                     logging.WARNING if kwargs[key] == "failed" else logging.INFO,
                 )
 
-    def event(self, stage, message, level=None):
+    def event(self, stage, message, level=None, *, update_stage=True):
         message = telemetry.redact(message)
         events = self.data.get("events", [])[-99:]
         events.append({"stage": stage, "message": message, "time": datetime.now(timezone.utc).isoformat()})
-        self.update(stage=stage, events=events)
+        self.update(**({"stage": stage, "events": events} if update_stage else {"events": events}))
         if level is None:
             level = (
                 logging.ERROR

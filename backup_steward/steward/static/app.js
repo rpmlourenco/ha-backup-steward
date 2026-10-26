@@ -9,6 +9,7 @@ const labels = {
   success: "Proteção em dia",
   failed: "Precisa da tua atenção",
   interrupted: "Execução interrompida",
+  cancelled: "Cancelado",
   destination_mounting: "A ligar e montar o destino",
   destination_mounted: "Destino montado manualmente",
   destination_off: "Destino desligado em segurança",
@@ -23,6 +24,8 @@ const phases = {
 };
 const operationLabels = {
   backup: "Fazer backup",
+  backup_only: "Backup sem checksum integral",
+  cancel: "Cancelar execução",
   backup_checksum: "Backup com checksum integral",
   checksum: "Verificar integridade",
   recover: "Concluir fecho seguro",
@@ -71,6 +74,7 @@ async function refresh() {
       "O estado anterior não confirma que um backup terminou. Volta a verificar dentro de momentos.";
     $("run").disabled = true;
     $("verify").disabled = true;
+    $("cancel-run").disabled = true;
     $("destination-mount").disabled =
       $("destination-shutdown").disabled =
       $("recover").disabled =
@@ -126,6 +130,17 @@ function render() {
     $("hero-title").textContent = current.busy ? "Estamos a verificar os teus dados." : "Verificação concluída.";
     $("hero-description").textContent = `Área: ${s.verification_source || "Todas as origens"}. ${s.verification_source ? "Esta verificação parcial não substitui a verificação integral agendada." : "Verificação integral das origens configuradas."}`;
   }
+  $("cancel-run").hidden = !current.busy || (!current.can_cancel && !(s.state === "running" && s.cancel_requested));
+  $("cancel-run").disabled = !current.can_cancel;
+  $("cancel-run").textContent = s.cancel_requested ? "A cancelar…" : "Cancelar execução";
+  if (current.busy && s.cancel_requested && ["running", "cancelled"].includes(s.state)) {
+    $("status-label").textContent = "A cancelar em segurança";
+    $("hero-title").textContent = "Estamos a terminar em segurança.";
+    $("hero-description").textContent = "Se o backup nativo estiver ativo, aguardamos a sua conclusão. Depois fechamos o disco em segurança.";
+  } else if (s.state === "cancelled" && !recovery && !current.busy) {
+    $("hero-title").textContent = "Execução cancelada.";
+    $("hero-description").textContent = s.safe_to_power_off ? "O destino ficou fechado em segurança. Consulta as etapas concluídas antes do cancelamento." : "O cancelamento terminou antes de operar no destino.";
+  }
   $("banner").hidden =
     current.busy ||
     (!recovery && s.state !== "failed" && s.retention !== "failed");
@@ -171,14 +186,16 @@ function render() {
     ? "Montado manualmente"
     : s.needs_cleanup
       ? "Por confirmar"
-      : ["success", "destination_off"].includes(s.state)
+      : s.state === "cancelled" && !s.safe_to_power_off
+        ? "Não utilizado"
+        : ["success", "cancelled", "destination_off"].includes(s.state)
         ? "Disco desligado"
         : "A aguardar";
   document
     .querySelector('[data-step="cleanup"]')
     .classList.toggle(
       "complete",
-      ["success", "destination_off"].includes(s.state) && !s.needs_cleanup,
+      ["success", "cancelled", "destination_off"].includes(s.state) && !s.needs_cleanup && (s.state !== "cancelled" || s.safe_to_power_off),
     );
   $("retention-note").textContent =
     `Conserva ${current.daily_retention_days} backups L2. Com uma cópia diária, isso representa cerca de ${current.daily_retention_days} dias de recuperação. O histórico L3 tem uma retenção própria.`;
@@ -233,6 +250,8 @@ function translate(stage, fallback) {
 }
 function confirmOperation(mode) {
   pending = mode;
+  $("backup-policy").hidden = $("backup-policy-note").hidden = mode !== "backup";
+  $("backup-verification").value = "backup";
   $("verification-scope").hidden = $("verification-scope-note").hidden = mode !== "checksum";
   if (mode === "checksum") {
     const select = $("verification-source");
@@ -248,8 +267,12 @@ function confirmOperation(mode) {
     }
   }
   $("confirm-title").textContent = operationLabels[mode];
+  $("cancel-confirm").textContent = mode === "cancel" ? "Voltar" : "Cancelar";
+  $("accept-confirm").textContent = mode === "cancel" ? "Cancelar execução" : "Continuar";
   $("confirm-description").textContent =
-    mode === "destination_mount"
+    mode === "cancel"
+      ? "A app vai parar a cópia ou verificação e fechar o disco em segurança. Se o Home Assistant ainda estiver a criar o backup nativo, terá de aguardar que termine. O cancelamento não desfaz ficheiros já copiados ou retenção já aplicada."
+      : mode === "destination_mount"
       ? "A app vai ligar a tomada e montar o destino. Não será feito nenhum backup. O disco fica ligado até pedires o fecho seguro."
       : mode === "destination_shutdown"
         ? "A app vai sincronizar e desmontar o destino. Só desligará a tomada depois de confirmar o fecho seguro. Fecha primeiro os ficheiros e aplicações que estejam a usar o destino."
@@ -264,26 +287,27 @@ function confirmOperation(mode) {
 }
 $("run").onclick = () => confirmOperation("backup");
 $("verify").onclick = () => confirmOperation("checksum");
+$("cancel-run").onclick = () => confirmOperation("cancel");
 $("recover").onclick = () => confirmOperation("recover");
 $("destination-mount").onclick = () => confirmOperation("destination_mount");
 $("destination-shutdown").onclick = () =>
   confirmOperation("destination_shutdown");
 $("cancel-confirm").onclick = () => $("confirm").close();
 $("accept-confirm").onclick = async () => {
-  const mode = pending;
+  const mode = pending === "backup" ? $("backup-verification").value : pending;
   const source = mode === "checksum" ? $("verification-source").value : "";
   $("confirm").close();
   try {
     await api(
       mode.startsWith("destination_")
         ? "destination"
-        : mode === "recover"
-          ? "recover"
+        : ["recover", "cancel"].includes(mode)
+          ? mode
           : "run",
       "POST",
       mode.startsWith("destination_")
         ? { action: mode.replace("destination_", "") }
-        : mode === "recover"
+        : ["recover", "cancel"].includes(mode)
           ? {}
           : source ? { mode, source } : { mode },
     );

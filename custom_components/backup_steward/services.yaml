@@ -15,6 +15,7 @@ run:
         select:
           options:
             - backup
+            - backup_only
             - backup_checksum
             - checksum
     source:

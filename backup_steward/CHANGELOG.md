@@ -1,3 +1,10 @@
+# 0.1.10 — Manual checksum choice and safe cancellation
+
+- Offer automatic, no full checksum and forced full checksum choices for manual backups. The dedicated backup_only mode bypasses overdue full checks while retaining normal copy/L2 validation and disk safety.
+- Add authenticated cancellation controls to the app and Home Assistant integration. Local workers stop before safe closure; native creation and hardware transitions finish at safe boundaries.
+- Persist an explicit cancelled outcome without advancing success dates. Preserve uncertain native jobs for recovery and notify only if an actual failure occurs.
+- Add two integration buttons (19 entities total); keep configured-area checks and app-owned scheduling unchanged.
+
 # 0.1.9 — Manual verification by area
 
 - Choose all configured sources or one source/mirror pair when requesting manual SHA-256 verification in the app.

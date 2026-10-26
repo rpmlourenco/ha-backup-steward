@@ -8,6 +8,10 @@ from .entity import StewardEntity
 async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities(
         [
+            StewardButton(
+                entry, "backup_only", "Run backup without full checksum", "mdi:archive-arrow-down-outline"
+            ),
+            StewardButton(entry, "cancel", "Cancel backup or verification", "mdi:stop-circle-outline"),
             StewardButton(entry, "backup", "Run backup", "mdi:backup-restore"),
             StewardButton(
                 entry, "backup_checksum", "Run backup with full checksum", "mdi:shield-sync-outline"
@@ -30,7 +34,11 @@ class StewardButton(StewardEntity, ButtonEntity):
     @property
     def available(self):
         data = self.coordinator.data
-        if not super().available or data["mode"] == "observe" or data["busy"]:
+        if not super().available or data["mode"] == "observe":
+            return False
+        if self.key == "cancel":
+            return bool(data.get("can_cancel"))
+        if data["busy"]:
             return False
         owned = bool(data["state"].get("needs_cleanup"))
         if self.key == "destination_shutdown":
@@ -41,7 +49,9 @@ class StewardButton(StewardEntity, ButtonEntity):
 
     async def async_press(self):
         try:
-            if self.key == "recover":
+            if self.key == "cancel":
+                await self.api.cancel()
+            elif self.key == "recover":
                 await self.api.recover()
             elif self.key.startswith("destination_"):
                 await self.api.destination(self.key.removeprefix("destination_"))

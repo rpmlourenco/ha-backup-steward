@@ -14,6 +14,7 @@ from .storage import Copier, confined, prune_l2
 from .supervisor import APIError, JobFailed
 from . import telemetry
 from .integrity import IntegrityFailure
+from .cancellation import RunCancelled, RunControl
 
 
 class Engine:
@@ -27,6 +28,7 @@ class Engine:
         )
         self.lock = asyncio.Lock()
         self.task = None
+        self.control = None
 
     @property
     def busy(self):
@@ -39,11 +41,29 @@ class Engine:
             raise ValueError("Observation mode never starts backups or controls power")
         if self.state.data.get("needs_cleanup"):
             raise ValueError("An interrupted execution needs recovery first")
-        if mode not in ("backup", "backup_checksum", "checksum"):
+        if mode not in ("backup", "backup_only", "backup_checksum", "checksum"):
             raise ValueError("Invalid operation")
         source = verification_source(self.cfg, mode, source)
-        self.task = asyncio.create_task(self.run(mode, scheduled_date, source=source))
+        self.control = RunControl()
+        self.task = asyncio.create_task(self.run(mode, scheduled_date, source=source, control=self.control))
         return self.task
+
+    @property
+    def can_cancel(self):
+        return bool(self.busy and self.control and self.control.accepting and not self.control.requested)
+
+    def cancel(self):
+        if self.busy and self.control and self.control.accepting and self.control.requested:
+            return
+        if not self.can_cancel:
+            raise ValueError("No cancellable backup or verification is active")
+        self.control.request()
+        self.state.update(cancel_requested=True)
+        self.state.event(
+            "cancel_requested",
+            "Cancelamento pedido; a aguardar um ponto seguro. A criação nativa, se ativa, tem de terminar.",
+            update_stage=False,
+        )
 
     async def notify(self, message):
         try:
@@ -56,8 +76,10 @@ class Engine:
 
         return start(self, action)
 
-    async def run(self, mode, scheduled_date=None, *, source=None):
+    async def run(self, mode, scheduled_date=None, *, source=None, control=None):
         async with self.lock:
+            control = control or RunControl()
+            self.control = control
             cfg = dict(self.cfg)
             source = verification_source(cfg, mode, source)
             state = self.state
@@ -67,8 +89,9 @@ class Engine:
                 cfg, disks, state.event, lambda report: state.update(integrity=report)
             )
             run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            checksum = mode != "backup" or checksum_due(
-                datetime.now(timezone.utc), cfg, state.data.get("last_checksum")
+            checksum = mode in ("backup_checksum", "checksum") or (
+                mode == "backup"
+                and checksum_due(datetime.now(timezone.utc), cfg, state.data.get("last_checksum"))
             )
             test = cfg["execution_mode"] == "test"
             cleanup_needed = False
@@ -96,10 +119,12 @@ class Engine:
                     backup_pending=False,
                     failure_stage=None,
                     integrity=None,
+                    cancel_requested=control.requested,
                 )
                 copier.plan_checks(
                     include_copy=mode != "checksum", include_full=checksum, test=test, source=source
                 )
+                control.checkpoint()
                 state.event("preflight", "A validar permissões, ausência de concorrência, discos e journal")
                 await self.api.preflight(cfg)
                 await host.acquire()
@@ -109,6 +134,7 @@ class Engine:
                     raise RuntimeError("Destination is already powered or mounted; refusing to interfere")
                 if scheduled_date:
                     state.update(last_schedule_date=scheduled_date)
+                control.checkpoint()
                 # Record ownership before the first side effect; recovery fails safe on uncertain outcomes.
                 cleanup_needed = True
                 state.update(needs_cleanup=True)
@@ -119,6 +145,7 @@ class Engine:
                 state.event("mount_ready", "Destino montado e acessível; a verificar espaço livre")
                 if shutil.disk_usage(cfg["destination_mount"]).free < cfg["min_free_gib"] * 1024**3:
                     raise RuntimeError("Destination free space is below policy")
+                control.checkpoint()
                 if mode != "checksum":
                     state.event("l2_create", "A criar o L2 nativo, comprimido e encriptado")
                     name = f"HA Backup Steward L2 {run_id} {secrets.token_hex(4)}"
@@ -132,6 +159,7 @@ class Engine:
                     await self.api.wait_job(job, cfg["backup_timeout_minutes"])
                     backup_pending = False
                     state.update(backup_pending=False)
+                    control.checkpoint()
                     state.event("l2_created", "Criação nativa concluída; a confirmar o arquivo encriptado")
                     slug, info = await self.api.find_backup(name)
                     state.update(backup_slug=slug)
@@ -146,10 +174,13 @@ class Engine:
                         "A transferir o L2; a retenção só é permitida depois da entrega confirmada",
                     )
                     async with asyncio.timeout(cfg["backup_timeout_minutes"] * 60):
-                        path, digest = await self.api.download(
-                            slug, directory, f"steward_l2_{run_id}_{slug}.tar", info.get("size_bytes")
+                        path, digest = await control.interruptible(
+                            self.api.download(
+                                slug, directory, f"steward_l2_{run_id}_{slug}.tar", info.get("size_bytes")
+                            )
                         )
                     state.update(l2="delivered", l2_file=path.name, l2_sha256=digest)
+                    control.checkpoint()
                     # Native deletion happens strictly after durable delivery. Any warning is visible.
                     try:
                         await self.api.delete_temporary(slug)
@@ -157,6 +188,7 @@ class Engine:
                         state.event(
                             "temporary_retained", "L2 delivered; native temporary copy could not be removed"
                         )
+                    control.checkpoint()
                     if not test:
                         try:
                             await disks.validate_source()
@@ -169,12 +201,16 @@ class Engine:
                             )
                     else:
                         state.update(retention="disabled_in_test")
+                    control.checkpoint()
                     state.event("l3_copy", "A copiar e verificar o L3")
-                    await copier.copy(run_id, test)
+                    await control.interruptible(copier.copy(run_id, test))
+                control.checkpoint()
                 if checksum:
                     state.event("checksum", f"A comparar SHA-256: {source or 'todas as origens'}")
-                    await copier.checksum(test, source=source)
+                    await control.interruptible(copier.checksum(test, source=source))
+                control.checkpoint()
                 copier.finish_checks()
+                control.accepting = False
                 # A partial or failed report never advances the production calendar.
                 if checksum and not test and source is None:
                     state.update(last_checksum=datetime.now(timezone.utc).isoformat())
@@ -198,6 +234,12 @@ class Engine:
                         if source is None
                         else state.data.get("last_success")
                     ),
+                )
+            except RunCancelled:
+                copier.abort_checks()
+                state.update(state="cancelled", error=None, error_detail=None, failure_stage=None)
+                state.event(
+                    "cancelled", "Execução cancelada a pedido; a concluir o fecho seguro se necessário"
                 )
             except asyncio.CancelledError:
                 copier.abort_checks()
@@ -237,13 +279,21 @@ class Engine:
                 )
                 await self.notify("Backup Steward failed. Inspect the stage and recovery status in the app.")
             finally:
+                control.accepting = False
                 if cleanup_needed and backup_pending:
                     state.event(
                         "recovery_required",
                         "Estado do trabalho nativo por confirmar; disco e alimentação mantidos, recuperação necessária",
                     )
                 if cleanup_needed and not backup_pending:
-                    state.event("cleanup_after_failure", "A tentar concluir o fecho seguro após a falha")
+                    state.event(
+                        "cancel_cleanup"
+                        if state.data.get("state") == "cancelled"
+                        else "cleanup_after_failure",
+                        "A concluir o fecho seguro após o cancelamento"
+                        if state.data.get("state") == "cancelled"
+                        else "A tentar concluir o fecho seguro após a falha",
+                    )
                     try:
                         if not state.data.get("safe_to_power_off"):
                             await disks.safe_remove()
@@ -251,9 +301,19 @@ class Engine:
                         await disks.verify_removed()
                         await self.api.power(cfg["power_entity"], False)
                         state.update(needs_cleanup=False)
-                        state.event("cleanup_done", "Fecho seguro concluído após a falha; tomada desligada")
+                        state.event(
+                            "cleanup_done",
+                            "Fecho seguro concluído após o cancelamento; tomada desligada"
+                            if state.data.get("state") == "cancelled"
+                            else "Fecho seguro concluído após a falha; tomada desligada",
+                        )
                     except Exception as cleanup_error:
                         state.update(needs_cleanup=True)
+                        if state.data.get("state") == "cancelled":
+                            state.update(state="failed", error="CleanupFailed")
+                            await self.notify(
+                                "Cancellation could not confirm safe shutdown; recovery is required."
+                            )
                         state.event(
                             "recovery_required",
                             "Fecho seguro não confirmado; alimentação mantida: "

@@ -44,6 +44,9 @@ class Client:
             body["source"] = source
         return await self.request("POST", "run", body)
 
+    async def cancel(self):
+        return await self.request("POST", "cancel", {})
+
     async def recover(self):
         return await self.request("POST", "recover", {})
 

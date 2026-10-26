@@ -72,3 +72,11 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
 - Official Home Assistant 2026.10.3 smoke passes with scoped run action requests, invalid backup/scope rejection, Status scope attributes and the unchanged 17 entities.
 - ARM64 app build and local desktop/mobile browser checks pass. The selector generates choices from app status, sends a source only for single-area checks, resets to all areas for subsequent requests, remains hidden for backups, and cannot start work while busy.
 - No production operation or configuration change was performed. An already running production verification is unaffected by this local implementation.
+
+## 0.1.10 follow-up
+
+- 122 isolated tests pass, adding no-full-checksum behavior even when overdue, pre-start cancellation, native completion/timeout handling, mount-boundary waiting, worker teardown before disk removal, preserved success dates, cleanup-failure notification, finalization rejection and idle/manual-operation guards.
+- A live fake rclone process is terminated and awaited through the user-cancellation control. Tests distinguish an app stop from user cancellation, preserve unknown native jobs/power, and reject unauthenticated or malformed cancellation requests.
+- Official Home Assistant 2026.10.3 smoke passes with 19 entities, manual backup_only requests, authenticated cancellation and availability transitions.
+- Local browser tests cover manual backup policy selection/reset, cancellation confirmation/request, pending and completed cancellation states, area selection and desktop/mobile layouts. ARM64 build passes. All execution tests use fake APIs/hardware and temporary files.
+- No running production job was cancelled or otherwise changed during implementation. The prior reported production failure remains a separate diagnosis.

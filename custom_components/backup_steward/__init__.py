@@ -76,7 +76,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 {
                     vol.Required("entry_id"): str,
                     vol.Optional("source"): str,
-                    vol.Optional("mode", default="backup"): vol.In(["backup", "backup_checksum", "checksum"]),
+                    vol.Optional("mode", default="backup"): vol.In(
+                        ["backup", "backup_only", "backup_checksum", "checksum"]
+                    ),
                 }
             ),
         )

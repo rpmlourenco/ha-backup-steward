@@ -50,6 +50,7 @@ def application(engine, ingress=False):
             {
                 "version": VERSION,
                 "busy": engine.busy,
+                "can_cancel": engine.can_cancel,
                 "mode": engine.cfg["execution_mode"],
                 "state": engine.state.public(busy=engine.busy),
                 "schedule_enabled": engine.cfg["schedule_enabled"],
@@ -93,6 +94,14 @@ def application(engine, ingress=False):
         engine.task.add_done_callback(consume_result)
         return web.json_response({"accepted": True}, status=202)
 
+    async def cancel(request):
+        body = await request.json()
+        if body != {}:
+            raise ValueError("Cancel accepts an empty object only")
+        engine.cancel()
+        return web.json_response({"accepted": True}, status=202)
+
+    app.router.add_post("/v1/cancel", cancel)
     app.router.add_get("/v1/status", status)
     app.router.add_post("/v1/run", run)
     app.router.add_post("/v1/recover", recover)

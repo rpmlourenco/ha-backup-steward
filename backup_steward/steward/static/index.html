@@ -57,6 +57,7 @@
                 >Fazer backup</button
               ><button class="secondary" id="verify">
                 Verificar integridade</button
+              ><button class="secondary" id="cancel-run" hidden>Cancelar execução</button
               ><button class="secondary" id="recover" hidden>
                 Concluir fecho seguro
               </button>
@@ -378,6 +379,14 @@
         <h2 id="confirm-title">Confirmar execução</h2>
       </div>
       <p id="confirm-description"></p>
+      <label id="backup-policy" hidden>Verificação neste backup
+        <select id="backup-verification" aria-label="Verificação neste backup">
+          <option value="backup">Automática — inclui checksum integral se estiver em falta</option>
+          <option value="backup_only">Sem checksum integral</option>
+          <option value="backup_checksum">Com checksum integral</option>
+        </select>
+      </label>
+      <p id="backup-policy-note" class="help" hidden>Sem checksum integral mantém a confirmação de tamanhos, o SHA-256 dos arquivos L2 e o fecho seguro do disco.</p>
       <label id="verification-scope" hidden>Área a verificar
         <select id="verification-source" aria-label="Área a verificar"></select>
       </label>

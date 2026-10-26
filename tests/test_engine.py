@@ -50,6 +50,260 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         with patch("steward.engine.shutil.disk_usage", return_value=Mock(free=1000 * 1024**3)):
             await self.engine.run(mode)
 
+    async def test_backup_only_skips_overdue_full_checksum_but_keeps_copy_checks(self):
+        self.engine.cfg["execution_mode"] = "production"
+        with (
+            patch("steward.engine.checksum_due", return_value=True),
+            patch("steward.engine.prune_l2", return_value=[]),
+        ):
+            await self.run_engine("backup_only")
+        self.assertEqual(self.state.data["state"], "success")
+        self.copier.copy.assert_awaited_once()
+        self.copier.finish_checks.assert_called_once()
+        self.copier.plan_checks.assert_called_once_with(
+            include_copy=True, include_full=False, test=False, source=None
+        )
+        self.copier.checksum.assert_not_awaited()
+        self.assertIsNone(self.state.data["last_checksum"])
+        self.disks.safe_remove.assert_awaited_once()
+
+    async def test_cancel_before_task_starts_touches_no_power_or_backup(self):
+        task = self.engine.start("backup_only")
+        self.engine.cancel()
+        await task
+        self.assertEqual(self.state.data["state"], "cancelled")
+        self.api.power.assert_not_awaited()
+        self.api.create_l2.assert_not_awaited()
+        self.api.notify.assert_not_awaited()
+        self.assertFalse(self.engine.can_cancel)
+
+    async def test_cancel_waits_for_native_completion_and_preserves_native_archive(self):
+        entered, finish = asyncio.Event(), asyncio.Event()
+
+        async def native(*args):
+            entered.set()
+            await finish.wait()
+
+        self.api.wait_job.side_effect = native
+        with patch("steward.engine.shutil.disk_usage", return_value=Mock(free=1000 * 1024**3)):
+            task = self.engine.start("backup_only")
+            await asyncio.wait_for(entered.wait(), 2)
+            self.engine.cancel()
+            self.engine.cancel()  # repeated requests are harmless
+            await asyncio.sleep(0)
+            self.assertFalse(task.done())
+            self.disks.safe_remove.assert_not_awaited()
+            self.assertFalse(self.engine.can_cancel)
+            finish.set()
+            await asyncio.wait_for(task, 2)
+        self.assertEqual(self.state.data["state"], "cancelled")
+        self.api.download.assert_not_awaited()
+        self.api.delete_temporary.assert_not_awaited()
+        self.disks.safe_remove.assert_awaited_once()
+        self.assertEqual(self.api.power.call_args.args, ("switch.disk", False))
+        self.api.notify.assert_not_awaited()
+
+    async def test_cancel_with_unknown_native_outcome_keeps_power_and_recovery(self):
+        entered, finish = asyncio.Event(), asyncio.Event()
+
+        async def native(*args):
+            entered.set()
+            await finish.wait()
+            raise TimeoutError()
+
+        self.api.wait_job.side_effect = native
+        with patch("steward.engine.shutil.disk_usage", return_value=Mock(free=1000 * 1024**3)):
+            task = self.engine.start("backup_only")
+            await asyncio.wait_for(entered.wait(), 2)
+            self.engine.cancel()
+            finish.set()
+            await asyncio.wait_for(task, 2)
+        self.assertEqual(self.state.data["state"], "failed")
+        self.assertEqual(self.state.data["failure_stage"], "l2_wait")
+        self.assertTrue(self.state.data["needs_cleanup"])
+        self.disks.safe_remove.assert_not_awaited()
+        self.assertEqual(self.api.power.await_count, 1)
+        self.api.notify.assert_awaited_once()
+
+    async def test_cancel_during_mount_waits_until_mount_finishes(self):
+        entered, finish = asyncio.Event(), asyncio.Event()
+
+        async def mount(*args):
+            entered.set()
+            await finish.wait()
+
+        self.disks.mount.side_effect = mount
+        with patch("steward.engine.shutil.disk_usage", return_value=Mock(free=1000 * 1024**3)):
+            task = self.engine.start("backup_only")
+            await asyncio.wait_for(entered.wait(), 2)
+            self.engine.cancel()
+            await asyncio.sleep(0)
+            self.disks.safe_remove.assert_not_awaited()
+            finish.set()
+            await asyncio.wait_for(task, 2)
+        self.api.create_l2.assert_not_awaited()
+        self.assertEqual(self.state.data["state"], "cancelled")
+        self.disks.safe_remove.assert_awaited_once()
+
+    async def test_cancel_copy_awaits_local_worker_exit_before_safe_removal(self):
+        entered, stopped = asyncio.Event(), asyncio.Event()
+
+        async def copy(*args):
+            entered.set()
+            try:
+                await asyncio.Future()
+            finally:
+                await asyncio.sleep(0)
+                stopped.set()
+
+        async def remove():
+            self.assertTrue(stopped.is_set())
+
+        self.copier.copy.side_effect = copy
+        self.disks.safe_remove.side_effect = remove
+        with patch("steward.engine.shutil.disk_usage", return_value=Mock(free=1000 * 1024**3)):
+            task = self.engine.start("backup_only")
+            await asyncio.wait_for(entered.wait(), 2)
+            self.engine.cancel()
+            await asyncio.wait_for(task, 2)
+        self.assertEqual(self.state.data["state"], "cancelled")
+        self.copier.prune_history.assert_not_called()
+        self.api.notify.assert_not_awaited()
+        self.assertIsNone(self.state.data["last_success"])
+
+    async def test_cancel_checksum_preserves_dates_and_cleanup_failure_notifies(self):
+        self.engine.cfg["execution_mode"] = "production"
+        entered = asyncio.Event()
+
+        async def checksum(*args, **kwargs):
+            entered.set()
+            await asyncio.Future()
+
+        self.copier.checksum.side_effect = checksum
+        self.disks.safe_remove.side_effect = RuntimeError("flush unknown")
+        previous = "2026-10-01T04:00:00+00:00"
+        self.state.update(last_checksum=previous, last_success=previous)
+        with patch("steward.engine.shutil.disk_usage", return_value=Mock(free=1000 * 1024**3)):
+            task = self.engine.start("checksum")
+            await asyncio.wait_for(entered.wait(), 2)
+            self.engine.cancel()
+            await asyncio.wait_for(task, 2)
+        self.assertEqual(self.state.data["state"], "failed")
+        self.assertTrue(self.state.public()["recovery_required"])
+        self.assertEqual(self.api.power.await_count, 1)
+        self.assertEqual(self.state.data["last_checksum"], previous)
+        self.assertEqual(self.state.data["last_success"], previous)
+        self.api.notify.assert_awaited_once()
+
+    async def test_cancel_during_native_post_keeps_unknown_job_for_recovery(self):
+        from steward.supervisor import APIError
+
+        entered, finish = asyncio.Event(), asyncio.Event()
+
+        async def create(*args):
+            entered.set()
+            await finish.wait()
+            raise APIError("Native POST response unknown")
+
+        self.api.create_l2.side_effect = create
+        with patch("steward.engine.shutil.disk_usage", return_value=Mock(free=1000 * 1024**3)):
+            task = self.engine.start("backup_only")
+            await asyncio.wait_for(entered.wait(), 2)
+            self.engine.cancel()
+            self.disks.safe_remove.assert_not_awaited()
+            finish.set()
+            await asyncio.wait_for(task, 2)
+        self.assertTrue(self.state.data["backup_pending"])
+        self.assertIsNone(self.state.data["backup_job"])
+        self.assertTrue(self.state.data["needs_cleanup"])
+        self.assertEqual(self.api.power.await_count, 1)
+        self.disks.safe_remove.assert_not_awaited()
+
+    async def test_cancel_download_preserves_native_backup_and_does_not_apply_retention(self):
+        entered = asyncio.Event()
+
+        async def download(*args):
+            entered.set()
+            await asyncio.Future()
+
+        self.api.download.side_effect = download
+        with (
+            patch("steward.engine.shutil.disk_usage", return_value=Mock(free=1000 * 1024**3)),
+            patch("steward.engine.prune_l2") as prune,
+        ):
+            task = self.engine.start("backup_only")
+            await asyncio.wait_for(entered.wait(), 2)
+            self.engine.cancel()
+            await asyncio.wait_for(task, 2)
+        self.assertEqual(self.state.data["state"], "cancelled")
+        self.api.delete_temporary.assert_not_awaited()
+        prune.assert_not_called()
+        self.copier.copy.assert_not_awaited()
+        self.disks.safe_remove.assert_awaited_once()
+
+    async def test_cancel_waits_for_l2_retention_thread_before_unmount(self):
+        import threading
+
+        self.engine.cfg["execution_mode"] = "production"
+        entered = asyncio.Event()
+        finish = threading.Event()
+        loop = asyncio.get_running_loop()
+
+        def prune(*args):
+            loop.call_soon_threadsafe(entered.set)
+            if not finish.wait(3):
+                raise AssertionError("test retention worker was not released")
+            return []
+
+        with (
+            patch("steward.engine.shutil.disk_usage", return_value=Mock(free=1000 * 1024**3)),
+            patch("steward.engine.prune_l2", side_effect=prune),
+        ):
+            task = self.engine.start("backup_only")
+            try:
+                await asyncio.wait_for(entered.wait(), 2)
+                self.engine.cancel()
+                await asyncio.sleep(0)
+                self.disks.safe_remove.assert_not_awaited()
+            finally:
+                finish.set()
+            await asyncio.wait_for(task, 2)
+        self.assertEqual(self.state.data["state"], "cancelled")
+        self.copier.copy.assert_not_awaited()
+        self.disks.safe_remove.assert_awaited_once()
+
+    async def test_final_safe_shutdown_cannot_be_cancelled(self):
+        entered, finish = asyncio.Event(), asyncio.Event()
+
+        async def remove():
+            entered.set()
+            await finish.wait()
+
+        self.disks.safe_remove.side_effect = remove
+        with patch("steward.engine.shutil.disk_usage", return_value=Mock(free=1000 * 1024**3)):
+            task = self.engine.start("checksum")
+            await asyncio.wait_for(entered.wait(), 2)
+            self.assertFalse(self.engine.can_cancel)
+            with self.assertRaises(ValueError):
+                self.engine.cancel()
+            finish.set()
+            await asyncio.wait_for(task, 2)
+        self.assertEqual(self.state.data["state"], "success")
+
+    async def test_cancellation_rejects_idle_and_manual_disk_operations(self):
+        with self.assertRaises(ValueError):
+            self.engine.cancel()
+        self.engine.cfg["execution_mode"] = "observe"
+        with self.assertRaises(ValueError):
+            self.engine.start("backup_only")
+        self.engine.cfg["execution_mode"] = "test"
+        task = self.engine.start("backup_only")
+        self.engine.cancel()
+        await task
+        await self.engine.start_destination("mount")
+        with self.assertRaises(ValueError):
+            self.engine.cancel()
+
     async def test_observe_mode_never_starts_a_job(self):
         self.engine.cfg["execution_mode"] = "observe"
         with self.assertRaises(ValueError):

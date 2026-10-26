@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backup_steward"))
 from steward import telemetry
-from steward.storage import command
+from steward.storage import command, stop_process
 
 
 class ProcessTests(unittest.IsolatedAsyncioTestCase):
@@ -148,6 +148,25 @@ time.sleep(30)
                 )
         self.assertTrue(run.report()["limit_reached"])
         self.assertEqual(run.report()["error_count"], 1)
+
+    async def test_user_cancellation_awaits_rclone_process_exit(self):
+        from steward.cancellation import RunCancelled, RunControl
+
+        control = RunControl()
+        seen = asyncio.Event()
+        with (
+            self.fake([{"level": "notice", "stats": {"checks": 1}}], wait=True),
+            patch("steward.telemetry.event", side_effect=lambda *args, **kwargs: seen.set()),
+            patch("steward.storage.stop_process", wraps=stop_process) as stop,
+        ):
+            task = asyncio.create_task(control.interruptible(command("rclone", "check", "source", "target")))
+            await asyncio.wait_for(seen.wait(), 3)
+            control.request()
+            with self.assertRaises(RunCancelled):
+                await asyncio.wait_for(task, 3)
+            stop.assert_awaited_once()
+            process = stop.call_args.args[0]
+            self.assertIsNotNone(process.returncode)
 
     async def test_timeout_stops_the_process(self):
         with self.fake([], wait=True):

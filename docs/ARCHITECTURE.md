@@ -13,6 +13,7 @@ One repository contains two installable packages: a Supervisor app (`backup_stew
 | `disks.py` | Host systemd D-Bus, shared legacy lock, UUID mounts, final SCSI proof |
 | `storage.py` | Confined files, archive identity/retention, rclone copy/check/history |
 | `integrity.py` | Global distinct-file error budget, per-check results and bounded examples |
+| `cancellation.py` | User cancellation checkpoints and awaited interruptible local workers |
 | `engine.py` | Serialized workflow and recovery, policy snapshot per execution |
 | `server.py` | Supervisor-ingress UI and separately authenticated integration API |
 
@@ -57,7 +58,8 @@ Port 8099 serves the UI only to the configured Supervisor ingress peer, default 
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /v1/status` | Bounded public state, policy summary and next run |
-| `POST /v1/run` | `backup`, `backup_checksum` or `checksum`; optional exact configured `source` only for checksum; returns 202 |
+| `POST /v1/run` | `backup`, `backup_only`, `backup_checksum` or `checksum`; optional exact configured `source` only for checksum; returns 202 |
+| `POST /v1/cancel` | Empty body; request safe cancellation of the active backup/verification, returns 202 |
 | `POST /v1/recover` | Start serialized recovery |
 | `POST /v1/destination` | Strict `action: mount` or `action: shutdown`; serialized manual destination control, returns 202 |
 | `GET/PUT /v1/config` | Ingress only, secrets omitted from reads |
@@ -72,3 +74,5 @@ The engine plans size/L2/full-check areas before work, so interrupted and untouc
 Below the global limit, a failed check is recorded and subsequent pairs are verified. `finish_checks` rejects any error or unfinished area before success timestamps and L3 history expiry. Threshold exceptions terminate and await the active rclone process before the engine attempts safe disk closure. Read/availability failures are aggregated; invalid UUIDs, unsafe paths and copy/sync failures remain immediate workflow failures. Reports persist atomically with bounded areas and at most eight redacted example paths; successful per-file names are not retained.
 
 Manual checksum scope is validated before task creation and again against the run configuration snapshot. Only configured roots are accepted; test mode maps the main root to its isolated test tree. The report plans only selected pairs. Scoped success never advances the global checksum/success dates, and the scheduler never supplies a scope. The UI and Status attributes retain the selected root so partial results cannot be confused with global verification.
+
+Cancellation has a per-run control object allocated before task creation. It interrupts only an explicitly tracked download/copy/checksum child task, awaits child/subprocess teardown and checks at hardware boundaries. Native POST/job polling is never interrupted by a user cancellation request. The finalization boundary disables cancellation before history expiry and success timestamp updates. App-level task cancellation remains CancelledError and preserves existing recovery handling. GET status advertises can_cancel, and repeated user requests are idempotent only within the same accepting run. Notification/event reporting preserves the actual workflow stage while cancellation is pending.

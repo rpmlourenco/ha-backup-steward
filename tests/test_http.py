@@ -106,6 +106,24 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(response.status, 400)
             start.assert_not_called()
 
+    async def test_cancel_endpoint_is_authenticated_strict_and_delegates_to_safe_control(self):
+        response = await self.client.post("/v1/cancel", json={})
+        self.assertEqual(response.status, 401)
+        response = await self.client.post("/v1/cancel", headers=self.auth(), json={})
+        self.assertEqual(response.status, 400)
+        with patch.object(self.engine, "cancel") as cancel:
+            for body in ({"force": True}, [], None):
+                response = await self.client.post("/v1/cancel", headers=self.auth(), json=body)
+                self.assertIn(response.status, (400, 415))
+            cancel.assert_not_called()
+            response = await self.client.post("/v1/cancel", headers=self.auth(), json={})
+            self.assertEqual(response.status, 202)
+            cancel.assert_called_once_with()
+        with patch.object(self.engine, "start") as start:
+            response = await self.client.post("/v1/run", headers=self.auth(), json={"mode": "backup_only"})
+            self.assertEqual(response.status, 202)
+            start.assert_called_once_with("backup_only")
+
     async def test_observation_rejects_execution_and_arbitrary_operations(self):
         for mode in ("backup", "reboot; rm -rf /", "checksum"):
             response = await self.client.post("/v1/run", headers=self.auth(), json={"mode": mode})

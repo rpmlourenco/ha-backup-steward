@@ -19,8 +19,9 @@ from homeassistant.helpers import area_registry, device_registry, entity_registr
 async def main():
     requests = []
     destination_requests = []
+    cancel_requests = []
     data = {
-        "version": "0.1.9",
+        "version": "0.1.10",
         "busy": False,
         "mode": "test",
         "schedule_enabled": False,
@@ -51,6 +52,13 @@ async def main():
         return web.json_response({"accepted": True}, status=202)
 
     app.router.add_post("/v1/destination", destination)
+
+    async def cancel(request):
+        assert request.headers.get("Authorization") == "Bearer fixture-key"
+        cancel_requests.append(await request.json())
+        return web.json_response({"accepted": True}, status=202)
+
+    app.router.add_post("/v1/cancel", cancel)
     async with TestServer(app) as server:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -128,7 +136,7 @@ async def main():
                 assert len(requests) == 2, requests
                 states = hass.states.async_all()
                 assert len([s for s in states if s.entity_id.startswith("sensor.")]) >= 8
-                assert len([s for s in states if s.entity_id.startswith("button.")]) == 6
+                assert len([s for s in states if s.entity_id.startswith("button.")]) == 8
                 registry = entity_registry.async_get(hass)
                 recovery_entity = registry.async_get_entity_id(
                     "binary_sensor", "backup_steward", "fixture-instance_needs_cleanup"
@@ -157,10 +165,27 @@ async def main():
                     "button", "press", {"entity_id": button("destination_shutdown")}, blocking=True
                 )
                 assert destination_requests == [{"action": "mount"}, {"action": "shutdown"}]
+                data["state"].update(state="destination_off", needs_cleanup=False, destination_manual=False)
+                await entry.runtime_data.coordinator.async_refresh()
+                await hass.async_block_till_done()
+                await hass.services.async_call(
+                    "button", "press", {"entity_id": button("backup_only")}, blocking=True
+                )
+                assert requests[-1] == {"mode": "backup_only"}, requests
+                data["can_cancel"] = True
                 data["busy"] = True
                 data["state"].update(state="running", needs_cleanup=True, recovery_required=False)
                 await entry.runtime_data.coordinator.async_refresh()
                 await hass.async_block_till_done()
+                assert hass.states.get(button("cancel")).state != "unavailable"
+                await hass.services.async_call(
+                    "button", "press", {"entity_id": button("cancel")}, blocking=True
+                )
+                assert cancel_requests == [{}], cancel_requests
+                data["can_cancel"] = False
+                await entry.runtime_data.coordinator.async_refresh()
+                await hass.async_block_till_done()
+                assert hass.states.get(button("cancel")).state == "unavailable"
                 self_state = hass.states.get(recovery_entity)
                 assert self_state.state == "off", self_state
                 data["busy"] = False
@@ -189,7 +214,7 @@ async def main():
                 assert await hass.config_entries.async_unload(entry.entry_id)
                 assert not hass.services.has_service("backup_steward", "run")
                 print(
-                    "HA smoke passed: config flow, authenticated polling, 17 entities, manual backup/disk controls and unload"
+                    "HA smoke passed: config flow, authenticated polling, 19 entities, manual backup/disk controls and unload"
                 )
             finally:
                 await hass.async_stop(force=True)
