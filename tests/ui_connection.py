@@ -79,7 +79,9 @@ try:
         nojs.close()
         page = browser.new_page()
         # Advance polls explicitly so response-order tests do not depend on wall-clock timing.
-        page.add_init_script("window.setInterval = () => 0;")
+        page.add_init_script(
+            "window.testPollers = []; window.setInterval = fn => { window.testPollers.push(fn); return 0; };"
+        )
         held = []
         posts = []
         errors = []
@@ -113,6 +115,10 @@ try:
         page.wait_for_function("document.getElementById('status-label').textContent.includes('ligar')")
         all_locked()
         assert posts == []
+        count = len(held)
+        page.evaluate("window.testPollers.forEach(fn => fn())")
+        page.wait_for_timeout(30)
+        assert len(held) == count, "Periodic polling must wait for a pending slow response"
         held[-1].fulfill(json=status(True))
         page.wait_for_function("document.getElementById('status-label').textContent==='Backup em curso'")
         for id in ("run", "verify", "destination-mount", "destination-shutdown"):

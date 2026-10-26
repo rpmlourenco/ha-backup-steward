@@ -4,6 +4,7 @@ let current = null,
   config = null,
   pending = null,
   statusReady = false,
+  statusRequestPending = false,
   refreshSequence = 0;
 const statusControls = ["run", "verify", "cancel-run", "recover", "destination-mount", "destination-shutdown", "settings-toggle", "accept-confirm", "pair", "config-save", "copy-token", "backup-verification", "verification-source"];
 function lockControls() {
@@ -81,6 +82,7 @@ async function api(path, method = "GET", body) {
 }
 async function refresh() {
   const sequence = ++refreshSequence;
+  statusRequestPending = true;
   statusReady = false;
   lockControls();
   try {
@@ -107,6 +109,8 @@ async function refresh() {
       $("destination-shutdown").disabled =
       $("recover").disabled =
         true;
+  } finally {
+    if (sequence === refreshSequence) statusRequestPending = false;
   }
 }
 function render() {
@@ -419,4 +423,4 @@ $("copy-token").onclick = async () => {
   }
 };
 refresh();
-setInterval(refresh, 5000);
+setInterval(() => { if (!statusRequestPending) refresh(); }, 5000);

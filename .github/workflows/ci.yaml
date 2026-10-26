@@ -42,5 +42,12 @@ jobs:
         with:
           python-version: '3.14'
       - run: python -m pip install playwright==1.62.0
-      - run: python -m playwright install --with-deps chromium
+      - name: Select test browser
+        run: |
+          ui_browser_path="$(command -v google-chrome || command -v chromium || true)"
+          if [ -n "$ui_browser_path" ]; then
+            echo "STEWARD_TEST_BROWSER=$ui_browser_path" >> "$GITHUB_ENV"
+          else
+            python -m playwright install --with-deps chromium
+          fi
       - run: python tests/ui_connection.py
