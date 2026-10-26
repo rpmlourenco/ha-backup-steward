@@ -88,3 +88,10 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
 - Reloading only the HTTPS panel's document/script/stylesheet through cache revalidation restored the correct dialog on the existing 0.1.10 installation. The selector was verified visible in the actual HTTPS page without starting a backup. The dialog layout is retained; a layout move was unnecessary to fix the cause.
 - An isolated actual-aiohttp browser upgrade fixture keeps obsolete unversioned JavaScript available while loading the new content-addressed document; all three backup modes reach the mocked engine. Desktop/mobile checks, official Home Assistant 2026.10.3 smoke (19 entities) and ARM64 build pass.
 - Nginx proxy inspection and fresh HTTP responses did not establish a proxy-serving defect. No proxy configuration, HA configuration, backup execution, power action or app installation was changed by diagnosis.
+
+## 0.1.12 follow-up
+
+- 125 isolated tests pass, including the HTTP contract that initial HTML disables all operation controls while keeping dialog dismissal available.
+- The Playwright browser suite covers JavaScript disabled, delayed first status with an existing backup, pending polling, connection loss with an open confirmation, malformed responses, reconnecting into busy state and out-of-order replies. It verifies zero mutation requests while state is unknown. The suite is now part of CI.
+- Existing manual backup/area/cancellation browser checks pass, as do official Home Assistant 2026.10.3 integration smoke (19 entities) and ARM64 image build.
+- Validation uses fake HTTP responses and temporary local files. No production service, backup cancellation, restart, app installation or disk/power action was performed.

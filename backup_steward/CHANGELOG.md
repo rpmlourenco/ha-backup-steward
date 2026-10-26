@@ -1,3 +1,10 @@
+# 0.1.12 — Disable operations until status is confirmed
+
+- Disable operation controls in the initial HTML, before JavaScript/status loading, and during pending status reads or connection failure.
+- Enable actions only after validating current status; ignore outdated responses and prevent mutation requests while status is unknown.
+- Keep open confirmations blocked if connection is lost or a backup becomes active. Preserve available cancellation only when the app explicitly permits it.
+- Add a browser regression suite to CI for loading, active backups, outages, malformed status, reconnection and reply ordering. No running backup is changed by this UI fix.
+
 # 0.1.11 — Consistent UI loading after updates
 
 - Fix reuse of older UI files after an app update. The affected HTTPS browser was running 0.1.9 HTML/JavaScript against the 0.1.10 API, which concealed the new backup choices.

@@ -213,6 +213,45 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
             pattern = r"static/[a-f0-9]{64}/app.js"
             self.assertNotEqual(re.search(pattern, first).group(), re.search(pattern, second).group())
 
+    async def test_ui_html_disables_actions_before_any_javascript_or_status_response(self):
+        from html.parser import HTMLParser
+
+        class Controls(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.disabled = {}
+
+            def handle_starttag(self, tag, attrs):
+                if tag in ("button", "select"):
+                    attrs = dict(attrs)
+                    if "id" in attrs:
+                        self.disabled[attrs["id"]] = "disabled" in attrs
+
+        with patch.dict("os.environ", {"STEWARD_INGRESS_IP": "127.0.0.1"}):
+            client = TestClient(TestServer(application(self.engine, ingress=True)))
+            await client.start_server()
+            self.addAsyncCleanup(client.close)
+            parser = Controls()
+            parser.feed(await (await client.get("/")).text())
+            for control in (
+                "run",
+                "verify",
+                "cancel-run",
+                "recover",
+                "destination-mount",
+                "destination-shutdown",
+                "settings-toggle",
+                "accept-confirm",
+                "config-save",
+                "pair",
+                "copy-token",
+                "backup-verification",
+                "verification-source",
+            ):
+                self.assertTrue(parser.disabled[control], control)
+            self.assertFalse(parser.disabled["cancel-confirm"])
+            self.assertFalse(parser.disabled["close-settings"])
+
     async def test_ingress_rejects_non_supervisor_clients(self):
         client = TestClient(TestServer(application(self.engine, ingress=True)))
         await client.start_server()

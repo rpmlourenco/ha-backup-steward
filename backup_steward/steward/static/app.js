@@ -2,7 +2,21 @@
 const $ = (id) => document.getElementById(id);
 let current = null,
   config = null,
-  pending = null;
+  pending = null,
+  statusReady = false,
+  refreshSequence = 0;
+const statusControls = ["run", "verify", "cancel-run", "recover", "destination-mount", "destination-shutdown", "settings-toggle", "accept-confirm", "pair", "config-save", "copy-token", "backup-verification", "verification-source"];
+function lockControls() {
+  for (const id of statusControls) $(id).disabled = true;
+}
+function operationAvailable(mode) {
+  if (!statusReady || !current || current.mode === "observe") return false;
+  if (mode === "cancel") return current.busy && current.can_cancel === true;
+  if (current.busy) return false;
+  if (mode === "recover") return !!current.state.recovery_required;
+  if (mode === "destination_shutdown") return current.state.needs_cleanup;
+  return ["backup", "backup_only", "backup_checksum", "checksum", "destination_mount"].includes(mode) && !current.state.needs_cleanup;
+}
 const labels = {
   idle: "Tudo pronto",
   running: "Backup em curso",
@@ -49,8 +63,10 @@ function toast(message) {
   setTimeout(() => ($("toast").hidden = true), 4500);
 }
 async function api(path, method = "GET", body) {
+  if (method !== "GET" && !statusReady) throw Error("Aguarda a confirmação do estado da app.");
   const result = await fetch(`v1/${path}`, {
     method,
+    signal: path === "status" ? AbortSignal.timeout(10000) : undefined,
     headers: { "Content-Type": "application/json", "X-Steward-UI": "1" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -64,10 +80,22 @@ async function api(path, method = "GET", body) {
   return data;
 }
 async function refresh() {
+  const sequence = ++refreshSequence;
+  statusReady = false;
+  lockControls();
   try {
-    current = await api("status");
+    const next = await api("status");
+    if (sequence !== refreshSequence) return;
+    if (typeof next?.busy !== "boolean" || !["observe", "test", "production"].includes(next.mode) || !next.state || typeof next.state.state !== "string" || typeof next.state.needs_cleanup !== "boolean" || (next.can_cancel !== undefined && typeof next.can_cancel !== "boolean")) {
+      throw Error("O estado recebido está incompleto.");
+    }
+    current = next;
+    statusReady = true;
     render();
   } catch (e) {
+    if (sequence !== refreshSequence) return;
+    statusReady = false;
+    lockControls();
     $("status-label").textContent = "Ligação indisponível";
     $("hero-title").textContent = "Não conseguimos contactar a app.";
     $("hero-description").textContent =
@@ -131,7 +159,7 @@ function render() {
     $("hero-description").textContent = `Área: ${s.verification_source || "Todas as origens"}. ${s.verification_source ? "Esta verificação parcial não substitui a verificação integral agendada." : "Verificação integral das origens configuradas."}`;
   }
   $("cancel-run").hidden = !current.busy || (!current.can_cancel && !(s.state === "running" && s.cancel_requested));
-  $("cancel-run").disabled = !current.can_cancel;
+  $("cancel-run").disabled = !operationAvailable("cancel");
   $("cancel-run").textContent = s.cancel_requested ? "A cancelar…" : "Cancelar execução";
   if (current.busy && s.cancel_requested && ["running", "cancelled"].includes(s.state)) {
     $("status-label").textContent = "A cancelar em segurança";
@@ -151,6 +179,12 @@ function render() {
       : "A execução não terminou com sucesso. Consulta a atividade e confirma o estado do destino.";
   $("run").disabled = $("verify").disabled =
     current.busy || current.mode === "observe" || s.needs_cleanup;
+  $("settings-toggle").disabled = !statusReady;
+  $("pair").disabled = $("copy-token").disabled = !statusReady;
+  $("config-save").disabled = !statusReady || current.busy || s.needs_cleanup;
+  $("accept-confirm").disabled = !operationAvailable(pending);
+  $("backup-verification").disabled = !operationAvailable("backup");
+  $("verification-source").disabled = !operationAvailable("checksum");
   $("recover").hidden = !recovery;
   $("recover").disabled = current.busy || current.mode === "observe";
   $("destination-mount").disabled =
@@ -249,6 +283,7 @@ function translate(stage, fallback) {
   );
 }
 function confirmOperation(mode) {
+  if (!operationAvailable(mode)) return toast("Aguarda um estado válido e disponível para esta operação.");
   pending = mode;
   $("backup-policy").hidden = $("backup-policy-note").hidden = mode !== "backup";
   $("backup-verification").value = "backup";
@@ -283,6 +318,7 @@ function confirmOperation(mode) {
             : mode === "checksum"
               ? "Escolhe todas as áreas ou apenas uma. A app verifica os ficheiros dessa seleção, liga e fecha o destino em segurança. Pode demorar várias horas. Não cria uma nova cópia."
               : "A app vai criar o L2, copiar os dados para L3 e fechar o disco em segurança. A política de retenção configurada será aplicada.";
+  $("accept-confirm").disabled = !operationAvailable(mode);
   $("confirm").showModal();
 }
 $("run").onclick = () => confirmOperation("backup");
@@ -295,6 +331,7 @@ $("destination-shutdown").onclick = () =>
 $("cancel-confirm").onclick = () => $("confirm").close();
 $("accept-confirm").onclick = async () => {
   const mode = pending === "backup" ? $("backup-verification").value : pending;
+  if (!operationAvailable(mode)) return toast("O estado da app ainda não permite esta operação.");
   const source = mode === "checksum" ? $("verification-source").value : "";
   $("confirm").close();
   try {

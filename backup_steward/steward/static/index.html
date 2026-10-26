@@ -19,7 +19,7 @@
           </div>
         </div>
         <button
-          id="settings-toggle"
+          id="settings-toggle" disabled
           class="icon-button"
           aria-label="Abrir definições"
           title="Definições"
@@ -51,14 +51,14 @@
               O estado da última execução aparece aqui.
             </p>
             <div class="hero-actions">
-              <button class="primary" id="run">
+              <button class="primary" id="run" disabled>
                 <svg viewBox="0 0 24 24">
                   <path d="M12 3v12m-5-5 5 5 5-5M5 15v5h14v-5" /></svg
                 >Fazer backup</button
-              ><button class="secondary" id="verify">
+              ><button class="secondary" id="verify" disabled>
                 Verificar integridade</button
-              ><button class="secondary" id="cancel-run" hidden>Cancelar execução</button
-              ><button class="secondary" id="recover" hidden>
+              ><button class="secondary" id="cancel-run" disabled hidden>Cancelar execução</button
+              ><button class="secondary" id="recover" disabled hidden>
                 Concluir fecho seguro
               </button>
             </div>
@@ -83,10 +83,10 @@
             </div>
           </div>
           <div class="hero-actions">
-            <button class="secondary" id="destination-mount">
+            <button class="secondary" id="destination-mount" disabled>
               Ligar e montar
             </button>
-            <button class="secondary" id="destination-shutdown">
+            <button class="secondary" id="destination-shutdown" disabled>
               Desmontar e desligar
             </button>
           </div>
@@ -354,9 +354,9 @@
         </details>
         <p id="form-error" class="form-error" role="alert"></p>
         <div class="dialog-actions">
-          <button type="button" id="pair" class="secondary">
+          <button type="button" id="pair" disabled class="secondary">
             Ligar ao Home Assistant</button
-          ><button type="submit" class="primary">Guardar definições</button>
+          ><button id="config-save" type="submit" class="primary" disabled>Guardar definições</button>
         </div>
         <div id="pairing" hidden>
           <p class="help">
@@ -368,7 +368,7 @@
             type="password"
             readonly
             aria-label="Chave da integração"
-          /><button type="button" id="copy-token" class="secondary">
+          /><button type="button" id="copy-token" disabled class="secondary">
             Copiar chave
           </button>
         </div>
@@ -380,7 +380,7 @@
       </div>
       <p id="confirm-description"></p>
       <label id="backup-policy" hidden>Verificação neste backup
-        <select id="backup-verification" aria-label="Verificação neste backup">
+        <select id="backup-verification" disabled aria-label="Verificação neste backup">
           <option value="backup">Automática — inclui checksum integral se estiver em falta</option>
           <option value="backup_only">Sem checksum integral</option>
           <option value="backup_checksum">Com checksum integral</option>
@@ -388,12 +388,12 @@
       </label>
       <p id="backup-policy-note" class="help" hidden>Sem checksum integral mantém a confirmação de tamanhos, o SHA-256 dos arquivos L2 e o fecho seguro do disco.</p>
       <label id="verification-scope" hidden>Área a verificar
-        <select id="verification-source" aria-label="Área a verificar"></select>
+        <select id="verification-source" disabled aria-label="Área a verificar"></select>
       </label>
       <p id="verification-scope-note" class="help" hidden>Escolher uma área verifica apenas essa origem e o respetivo espelho. Só a verificação de todas as áreas conta para o checksum integral da agenda.</p>
       <div class="dialog-actions">
         <button id="cancel-confirm" class="secondary">Cancelar</button
-        ><button id="accept-confirm" class="primary">Continuar</button>
+        ><button id="accept-confirm" disabled class="primary">Continuar</button>
       </div>
     </dialog>
     <div id="toast" class="toast" role="status" hidden></div>

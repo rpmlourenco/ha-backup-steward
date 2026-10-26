@@ -4,7 +4,7 @@
 
 Encrypted Home Assistant backups, verified offline copies, and safe disk shutdown — packaged as one app with a lightweight companion integration.
 
-> **Experimental 0.1.11.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
+> **Experimental 0.1.12.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
 
 ![Backup Steward interface](docs/images/overview.png)
 
@@ -142,3 +142,9 @@ Use **Ligar e montar** to power on and mount the configured destination without 
 Manual sessions reserve the backup lock: scheduled/manual backups and settings changes wait until the destination is closed. Observation mode never operates disks. An already powered or externally mounted destination is not adopted. Close files/apps using the destination before shutdown; an unsuccessful unmount or unknown flush leaves power on and reports an error. Restarting the app preserves the shutdown obligation and requires recovery. Manual controls never advance backup/checksum success timestamps, create archives or apply retention.
 
 Rclone errors are relayed immediately with a bounded affected-file/reason report; progress is logged every minute. Copy/checksum phases identify the current source and record completion per source. Credentials and URLs are redacted; per-file success messages and arbitrary JSON fields are not dumped. The first eight error messages are shown, followed by a count if more occurred.
+
+## UI connection safety
+
+All operation controls are disabled in the initial HTML, before JavaScript or a status response arrives. Status reads keep controls locked until a structurally valid current response is available. Unavailable/malformed responses lock actions, including a confirmation dialog already open. Older out-of-order status responses cannot restore stale availability. A confirmed active backup keeps backup/verification/mount actions blocked and permits only the appropriate safe cancellation action.
+
+The isolated browser regression suite runs in CI using Playwright/Chromium: `python tests/ui_connection.py`. An installed Chromium-family browser can be selected with `STEWARD_TEST_BROWSER` for local checks. Tests use temporary loopback fixtures and simulated status/API responses, never a real HA instance.
