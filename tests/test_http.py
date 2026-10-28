@@ -31,6 +31,32 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
     def auth(self):
         return {"Authorization": "Bearer " + self.state.identity["api_token"]}
 
+    async def test_restore_preview_accepts_missing_area_without_creating_it(self):
+        primary = Path(self.temp.name).resolve() / "media" / "NAS"
+        primary.mkdir(parents=True)
+        missing = primary.parent / "immich"
+        self.engine.cfg.update(
+            execution_mode="production", source_mount=str(primary), additional_sources=[str(missing)]
+        )
+        self.engine.host_factory = lambda *_: AsyncMock()
+        self.engine.disks_factory = lambda *_: AsyncMock()
+        response = await self.client.post(
+            "/v1/restore/preview", headers=self.auth(), json={"sources": [str(missing)]}
+        )
+        self.assertEqual(response.status, 200)
+        result = await response.json()
+        self.assertTrue(result["areas"][0]["create"])
+        self.assertFalse(result["areas"][0]["nonempty"])
+        self.assertFalse(missing.exists())
+        missing.mkdir()
+        response = await self.client.post(
+            "/v1/restore/start",
+            headers=self.auth(),
+            json={"token": result["token"], "erase_sources": [], "checksum": False},
+        )
+        self.assertEqual(response.status, 400)
+        self.assertIn("error", await response.json())
+
     async def test_restore_endpoints_require_authentication_and_exact_contract(self):
         response = await self.client.post("/v1/restore/preview", json={})
         self.assertEqual(response.status, 401)

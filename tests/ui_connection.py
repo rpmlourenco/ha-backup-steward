@@ -41,7 +41,7 @@ actions = (
 
 def status(busy):
     return {
-        "version": "0.1.14",
+        "version": "0.1.15",
         "busy": busy,
         "can_cancel": busy,
         "mode": "production",

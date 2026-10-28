@@ -406,6 +406,8 @@ $("accept-confirm").onclick = async () => {
         $("restore-summary").textContent = nonempty.length
           ? `Estas áreas têm conteúdo e serão esvaziadas: ${nonempty.map(a => a.source).join(", ")}. Sem autorização, cancela o restauro.`
           : `Áreas vazias, prontas a receber a cópia: ${plan.areas.map(a => a.source).join(", ")}.`;
+        const missing = plan.areas.filter(a => a.create);
+        if (missing.length) $("restore-summary").textContent += ` Pastas a criar após confirmação: ${missing.map(a => a.source).join(", ")}.`;
         $("restore-erase-label").hidden = !nonempty.length;
         $("accept-confirm").textContent = "Restaurar agora";
       } catch (e) { toast(e.message); }

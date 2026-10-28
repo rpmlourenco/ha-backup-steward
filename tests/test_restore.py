@@ -52,6 +52,104 @@ class RestoreTests(unittest.IsolatedAsyncioTestCase):
             checksum=checksum,
         )
 
+    async def test_missing_area_preview_and_confirmation_do_not_create_directories(self):
+        self.other.rmdir()
+        plan = await self.engine.preview_restore([str(self.other)])
+        self.assertTrue(plan["areas"][0]["create"])
+        self.assertFalse(plan["areas"][0]["nonempty"])
+        self.assertNotIn("parent_identity", plan["areas"][0])
+        self.assertFalse(self.other.exists())
+        with patch.object(self.engine, "run", new=AsyncMock()):
+            await self.engine.start_restore(plan["token"], [], False)
+        self.assertFalse(self.other.exists())
+        self.api.power.assert_not_awaited()
+
+    async def test_missing_area_is_created_and_restored_with_optional_checksum(self):
+        self.other.rmdir()
+        plan = await self.engine.preview_restore([str(self.other)])
+        await self.engine.start_restore(plan["token"], [], True)
+        self.assertEqual(self.state.data["state"], "success")
+        self.assertEqual((self.other / "restored.bin").read_bytes(), b"saved content")
+        self.assertEqual(self.state.data["integrity"]["status"], "passed")
+        self.assertEqual(len(self.state.data["integrity"]["areas"]), 2)
+        self.assertTrue(any(e["stage"] == "restore_create" for e in self.state.data["events"]))
+        self.assertFalse(list(self.other.rglob("*.partial")))
+        self.api.create_l2.assert_not_awaited()
+
+    async def test_missing_area_is_not_created_when_another_mirror_is_unavailable(self):
+        self.other.rmdir()
+        options = await self.plan()
+        shutil.rmtree(self.disk / "mirror" / self.live.name)
+        restorer = Restorer(self.cfg, self.disks, lambda *_: None, lambda *_: None, options)
+        with self.assertRaises(ValueError):
+            await restorer.prepare()
+        self.assertFalse(self.other.exists())
+
+    async def test_missing_area_is_not_created_when_space_is_insufficient(self):
+        self.other.rmdir()
+        options = await self.plan([str(self.other)])
+        restorer = Restorer(self.cfg, self.disks, lambda *_: None, lambda *_: None, options)
+        with patch("steward.restore.shutil.disk_usage", return_value=type("Usage", (), {"free": 0})()):
+            with self.assertRaises(ValueError):
+                await restorer.prepare()
+        self.assertFalse(self.other.exists())
+
+    async def test_missing_main_disk_is_never_replaced_with_an_ordinary_directory(self):
+        self.live.rmdir()
+        with self.assertRaises(ValueError):
+            await self.engine.preview_restore([str(self.live)])
+        self.assertFalse(self.live.exists())
+        self.api.power.assert_not_awaited()
+
+    async def test_missing_area_appearing_after_preview_requires_new_confirmation(self):
+        self.other.rmdir()
+        plan = await self.engine.preview_restore([str(self.other)])
+        self.other.mkdir()
+        (self.other / "new.bin").write_bytes(b"keep")
+        with self.assertRaises(ValueError):
+            self.engine.start_restore(plan["token"], [], False)
+        self.assertEqual((self.other / "new.bin").read_bytes(), b"keep")
+        self.api.power.assert_not_awaited()
+
+    async def test_changed_parent_blocks_missing_area_creation(self):
+        parent = self.root / "areas"
+        parent.mkdir()
+        live = parent / "photos"
+        self.cfg["additional_sources"] = [str(live)]
+        plan = await self.engine.preview_restore([str(live)])
+        parent.rename(self.root / "previous-areas")
+        parent.mkdir()
+        with self.assertRaises(ValueError):
+            self.engine.start_restore(plan["token"], [], False)
+        self.assertFalse(live.exists())
+
+    async def test_missing_area_with_symlink_ancestor_is_rejected(self):
+        alias = self.root / "alias"
+        alias.symlink_to(self.root, target_is_directory=True)
+        self.cfg["additional_sources"] = [str(alias / "absent")]
+        with self.assertRaises(ValueError):
+            await self.engine.preview_restore([str(alias / "absent")])
+        self.assertFalse((self.root / "absent").exists())
+
+    async def test_existing_area_disappearing_returns_validation_error(self):
+        plan = await self.engine.preview_restore([str(self.other)])
+        self.other.rmdir()
+        with self.assertRaises(ValueError):
+            self.engine.start_restore(plan["token"], [], False)
+
+    async def test_nested_test_area_is_created_only_inside_the_source(self):
+        self.cfg["execution_mode"] = "test"
+        mirror = self.disk / self.cfg["test_directory"] / "mirror" / self.live.name
+        mirror.mkdir(parents=True)
+        (mirror / "saved.bin").write_bytes(b"test backup")
+        plan = await self.engine.preview_restore([str(self.live)])
+        live = self.live / self.cfg["test_directory"] / "level-2"
+        self.assertFalse(live.exists())
+        await self.engine.start_restore(plan["token"], [], False)
+        self.assertEqual(self.state.data["state"], "success")
+        self.assertEqual((live / "saved.bin").read_bytes(), b"test backup")
+        self.assertFalse((self.live / "saved.bin").exists())
+
     async def test_scope_whitelist_and_test_isolation(self):
         self.assertEqual(len(selected_pairs(self.cfg, None)), 2)
         self.assertEqual(selected_pairs(self.cfg, [str(self.other)])[0][1], self.other)

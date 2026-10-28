@@ -18,8 +18,9 @@ Use **Restaurar L3** to restore the current L3 mirror to all original areas or a
 
 1. Select the areas and whether to run full SHA-256 after copying.
 2. Choose **Analisar seleção**. This only inspects the original areas and does not power on the backup disk.
-3. If any selected area contains files or directories, explicitly authorize erasing its complete contents. Without that confirmation, cancel. A new nonempty area or changed identity requires another preparation.
-4. Choose **Restaurar agora**. The app mounts L3 read-only, validates every selected mirror, area and space estimate before deleting anything, clears only confirmed original areas and copies the mirror directly into them.
+3. Missing original data directories are listed for creation after confirmation. The primary disk mount must still exist and pass UUID validation; an absent mount is never replaced by an ordinary directory. Parent identities are pinned and changes require another preparation.
+4. If any selected area contains files or directories, explicitly authorize erasing its complete contents. Without that confirmation, cancel. A new nonempty area or changed identity requires another preparation.
+5. Choose **Restaurar agora**. The app mounts L3 read-only, validates every selected mirror, area and space estimate before deleting anything, clears only confirmed original areas and copies the mirror directly into them.
 
 Files are written in place (`rclone --inplace`), without a temporary full copy or history directory. Selected original content is deleted before copying. Cancellation or a write failure can leave a partial restore; the read-only L3 mirror is preserved so the restore can be repeated. Normal file-size validation is always performed; optional SHA-256 uses the existing global integrity error limit. Missing/empty mirrors, symbolic/hard links, special files and nested mounts block preparation.
 

@@ -59,7 +59,12 @@ try:
                 json=dict(
                     token="fixture-plan",
                     areas=[
-                        dict(source=s, mirror="/media/offline/mirror/" + s.split("/")[-1], nonempty=nonempty)
+                        dict(
+                            source=s,
+                            mirror="/media/offline/mirror/" + s.split("/")[-1],
+                            nonempty=nonempty,
+                            create=not nonempty,
+                        )
                         for s in body["sources"]
                     ],
                 )
@@ -116,6 +121,7 @@ try:
         )
         assert posts[-1][1]["sources"] == ["/media/files"]
         assert page.locator("#restore-erase-label").is_hidden()
+        assert "Pastas a criar após confirmação" in page.locator("#restore-summary").inner_text()
         page.locator("#accept-confirm").click()
         page.wait_for_function("!document.getElementById('confirm').open")
         assert posts[-1] == ("start", dict(token="fixture-plan", erase_sources=[], checksum=False))

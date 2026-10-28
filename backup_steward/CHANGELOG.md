@@ -1,3 +1,10 @@
+# 0.1.15 — Create missing original directories during L3 restore
+
+- Accept absent original data areas in restore preparation instead of returning a server error. Show directories that will be created after confirmation.
+- Keep preview and confirmation free of filesystem writes. Validate all selected mirrors and space estimates before creating missing directories or clearing existing data.
+- Pin the nearest existing parent and create the confirmed path without following symbolic links. Changed paths require a new preparation; a missing primary disk mount remains an error and is never replaced with an ordinary directory.
+- Preserve direct in-place copying, optional SHA-256, cancellation, read-only L3 and safe shutdown. Add regression tests for missing directories, changed parents, links, insufficient space and test-area isolation.
+
 # 0.1.14 — Restore L3 by area
 
 - Restore the current L3 mirror to all original areas, one area or a selected combination from the app UI.

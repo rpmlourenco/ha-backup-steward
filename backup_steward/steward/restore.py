@@ -42,6 +42,81 @@ def root_identity(path):
     return [info.st_dev, info.st_ino]
 
 
+def describe_area(live, cfg):
+    """Missing ordinary areas are planned without creating directories during preview."""
+    try:
+        live.lstat()
+    except FileNotFoundError:
+        if live == Path(cfg["source_mount"]):
+            raise ValueError(
+                "A montagem de origem principal está ausente; não será criada uma pasta no seu lugar"
+            ) from None
+        parent = live.parent
+        while not parent.exists():
+            if parent.is_symlink():
+                raise ValueError("Link simbólico no caminho da área")
+            parent = parent.parent
+        confined(live, parent)
+        if cfg["execution_mode"] == "test" and not parent.is_relative_to(Path(cfg["source_mount"])):
+            raise ValueError("A área de teste tem de permanecer no disco de origem")
+        return dict(
+            identity=None,
+            create=True,
+            nonempty=False,
+            parent=str(parent),
+            parent_identity=root_identity(parent),
+        )
+    return dict(identity=root_identity(live), create=False, nonempty=any(live.iterdir()))
+
+
+def validate_area(area):
+    """Pin existing roots, or the nearest existing parent of an absent root."""
+    live = Path(area["source"])
+    try:
+        if area.get("create"):
+            parent = Path(area["parent"])
+            if root_identity(parent) != area["parent_identity"]:
+                raise ValueError("A pasta de destino mudou; prepara novamente o restauro")
+            confined(live, parent)
+            try:
+                live.lstat()
+            except FileNotFoundError:
+                return
+            raise ValueError("A área passou a existir; prepara novamente o restauro")
+        if root_identity(live) != area["identity"]:
+            raise ValueError("A identidade de uma área mudou desde a confirmação")
+    except FileNotFoundError:
+        raise ValueError("Uma pasta mudou ou desapareceu; prepara novamente o restauro") from None
+
+
+def create_area(area):
+    """Create only the confirmed path, using a pinned parent FD and no symlink traversal."""
+    validate_area(area)
+    live, parent = Path(area["source"]), Path(area["parent"])
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    fd = os.open(parent, flags)
+    try:
+        opened = os.fstat(fd)
+        if [opened.st_dev, opened.st_ino] != area["parent_identity"]:
+            raise ValueError("A pasta de destino mudou antes da criação")
+        device = opened.st_dev
+        for component in live.relative_to(parent).parts:
+            # Existing intermediate directories must also be re-confirmed, never adopted.
+            try:
+                os.mkdir(component, mode=0o755, dir_fd=fd)
+            except FileExistsError:
+                raise ValueError("O caminho passou a existir; prepara novamente o restauro") from None
+            child = os.open(component, flags, dir_fd=fd)
+            os.close(fd)
+            fd = child
+            opened = os.fstat(fd)
+            if opened.st_dev != device:
+                raise ValueError("A área criada atravessa uma montagem inesperada")
+        area.update(identity=[opened.st_dev, opened.st_ino], create=False)
+    finally:
+        os.close(fd)
+
+
 def nested_mounts(root):
     # Bind mounts can share st_dev, so device checks alone are insufficient.
     for line in Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines():
@@ -112,20 +187,19 @@ async def preview(engine, sources):
             await disks.validate_source()
             areas = []
             for mirror, live in pairs:
-                identity = root_identity(live)
+                details = describe_area(live, cfg)
                 nested_mounts(live)
-                areas.append(
-                    dict(
-                        source=str(live), mirror=str(mirror), identity=identity, nonempty=any(live.iterdir())
-                    )
-                )
+                areas.append(dict(source=str(live), mirror=str(mirror), **details))
         finally:
             await host.close()
         token = secrets.token_urlsafe(32)
         engine.restore_plan = dict(
             token=token, expires=time.monotonic() + 600, cfg=public_config(cfg), areas=areas, sources=sources
         )
-        return dict(token=token, areas=[{k: v for k, v in area.items() if k != "identity"} for area in areas])
+        return dict(
+            token=token,
+            areas=[{k: area[k] for k in ("source", "mirror", "nonempty", "create")} for area in areas],
+        )
 
 
 def start(engine, token, erase_sources, checksum):
@@ -147,9 +221,8 @@ def start(engine, token, erase_sources, checksum):
         raise ValueError("É necessária confirmação explícita para apagar as áreas com conteúdo")
     for area in plan["areas"]:
         path = Path(area["source"])
-        if root_identity(path) != area["identity"] or (
-            any(path.iterdir()) and str(path) not in erase_sources
-        ):
+        validate_area(area)
+        if not area.get("create") and any(path.iterdir()) and str(path) not in erase_sources:
             raise ValueError("Uma área mudou; volta a preparar e confirmar o restauro")
     engine.restore_plan = None
     engine.control = RunControl()
@@ -178,7 +251,8 @@ class Restorer(Copier):
         if (source, target) not in self.restore_pairs:
             raise ValueError("Par de restauro inválido")
         confined(source, Path(self.cfg["destination_mount"]))
-        confined(target, target)
+        area = next(a for a in self.options["areas"] if a["source"] == str(target))
+        validate_area(area)
 
     async def prepare(self):
         # Validate every selected mirror/area and total space before the first deletion.
@@ -188,19 +262,22 @@ class Restorer(Copier):
             await self.disks.validate_source()
             await self.disks.validate_destination()
             self.check_paths(mirror, live)
-            if root_identity(live) != area["identity"]:
-                raise ValueError("A identidade de uma área mudou desde a confirmação")
+            validate_area(area)
             if not mirror.is_dir():
                 raise ValueError(f"Espelho L3 indisponível: {mirror}")
-            old = await walk_tree(live)
+            missing = area.get("create", False)
+            old = dict(files=0, size=0, allocated=0) if missing else await walk_tree(live)
             incoming = await walk_tree(mirror)
             self.mirror_identities[str(mirror)] = root_identity(mirror)
             if not incoming["files"]:
                 raise ValueError("Espelho L3 vazio; não serão apagados dados")
-            if any(live.iterdir()) and str(live) not in self.options["erase_sources"]:
+            if not missing and any(live.iterdir()) and str(live) not in self.options["erase_sources"]:
                 raise ValueError("A área deixou de estar vazia; confirma novamente antes de apagar")
-            device = live.stat().st_dev
-            budget = budgets.setdefault(device, dict(free=shutil.disk_usage(live).free, need=0, reclaim=0))
+            storage_root = Path(area["parent"]) if missing else live
+            device = storage_root.stat().st_dev
+            budget = budgets.setdefault(
+                device, dict(free=shutil.disk_usage(storage_root).free, need=0, reclaim=0)
+            )
             budget["need"] += incoming["size"]
             budget["reclaim"] += old["allocated"]
             self.integrity.plan(mirror, live, "size")
@@ -208,6 +285,13 @@ class Restorer(Copier):
                 self.integrity.plan(mirror, live, "sha256")
         if any(b["need"] > b["free"] + b["reclaim"] for b in budgets.values()):
             raise ValueError("Espaço insuficiente nas áreas originais, mesmo após a limpeza confirmada")
+        # All selected mirrors and space estimates passed; only now create confirmed missing areas.
+        for area in self.options["areas"]:
+            if area.get("create"):
+                await self.disks.validate_source()
+                await self.disks.validate_destination()
+                create_area(area)
+                self.on_event("restore_create", f"Pasta criada para o restauro: {area['source']}")
         self.integrity.publish()
         self.prepared = True
 
