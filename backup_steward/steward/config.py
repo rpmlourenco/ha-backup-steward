@@ -9,7 +9,6 @@ from zoneinfo import ZoneInfo
 
 DEFAULTS = {
     "execution_mode": "observe",
-    "legacy_scheduler_disabled": False,
     "schedule_enabled": False,
     "schedule_time": "04:00",
     "timezone": "Europe/Madrid",
@@ -57,12 +56,14 @@ def relative_path(value):
 
 
 def validate(raw):
+    # Discard the retired acknowledgement when upgrading an existing installation.
+    raw = {k: v for k, v in raw.items() if k != "legacy_scheduler_disabled"}
     unknown = set(raw) - set(DEFAULTS) - SECRET_KEYS
     if unknown:
         raise ValueError("Unknown configuration options: " + ", ".join(sorted(unknown)))
     cfg = copy.deepcopy(DEFAULTS)
     cfg.update(raw)
-    for key in ("legacy_scheduler_disabled", "schedule_enabled"):
+    for key in ("schedule_enabled",):
         if type(cfg[key]) is not bool:
             raise ValueError(f"{key} must be boolean")
     if cfg["execution_mode"] not in ("observe", "test", "production"):
@@ -121,8 +122,6 @@ def validate(raw):
             raise ValueError("Execution requires both disk UUIDs and a power switch")
         if not cfg.get("encryption_password"):
             raise ValueError("An encryption secret is required; unencrypted L2 is not supported")
-        if not cfg["legacy_scheduler_disabled"]:
-            raise ValueError("Disable the legacy scheduler before enabling execution")
     if cfg["schedule_enabled"] and cfg["execution_mode"] == "observe":
         raise ValueError("Observation mode cannot run a schedule")
     return cfg

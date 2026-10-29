@@ -12,6 +12,7 @@ let current = null,
 const statusControls = ["restore", "restore-sources", "restore-checksum", "restore-erase", "run", "verify", "cancel-run", "recover", "destination-mount", "destination-shutdown", "settings-toggle", "accept-confirm", "pair", "config-save", "copy-token", "backup-verification", "verification-source"];
 function lockControls() {
   for (const id of statusControls) $(id).disabled = true;
+  $("config-save-reason").textContent = "A aguardar confirmação do estado da app para guardar.";
 }
 function operationAvailable(mode) {
   if (!statusReady || !current || current.mode === "observe") return false;
@@ -196,6 +197,10 @@ function render() {
   $("settings-toggle").disabled = !statusReady;
   $("pair").disabled = $("copy-token").disabled = !statusReady;
   $("config-save").disabled = !statusReady || current.busy || s.needs_cleanup;
+  $("config-save-reason").textContent = current.busy
+    ? "Guardar indisponível durante a execução. As alterações ainda não foram guardadas; aguarda a conclusão."
+    : s.needs_cleanup ? "Conclui o fecho seguro do destino antes de guardar as definições."
+    : "";
   $("accept-confirm").disabled = !operationAvailable(pending) || (pending === "restore" &&
     (preparingRestore || (restorePreview?.areas.some(a => a.nonempty) && !$("restore-erase").checked)));
   for (const id of ["restore-sources", "restore-checksum", "restore-erase"]) {
@@ -253,6 +258,11 @@ function render() {
   $("retention-note").textContent =
     `Conserva ${current.daily_retention_days} backups L2. Com uma cópia diária, isso representa cerca de ${current.daily_retention_days} dias de recuperação. O histórico L3 tem uma retenção própria.`;
   const integrity = s.integrity;
+  const fullAreas = (integrity?.areas || []).filter(a => a.kind === "sha256");
+  const checked = fullAreas.reduce((sum, a) => sum + (a.checked || 0), 0);
+  const activeArea = fullAreas.find(a => a.status === "running");
+  $("checksum-progress").hidden = !fullAreas.length;
+  $("checksum-progress").textContent = `SHA-256 integral: ${checked.toLocaleString("pt-PT")} ficheiros processados${activeArea ? " · A verificar " + activeArea.source : ""}${!statusReady ? " · Último estado recebido" : ""}`;
   $("integrity-report").hidden = !integrity;
   if (integrity) {
     const status = {running: "Verificação em curso", passed: "Verificação concluída", failed: "Verificação concluída com erros", aborted: "Verificação incompleta"}[integrity.status] || integrity.status;

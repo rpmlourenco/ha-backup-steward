@@ -1,3 +1,6 @@
+import asyncio
+from datetime import datetime, timezone
+from threading import Event
 import io
 import json
 from pathlib import Path
@@ -15,6 +18,7 @@ from steward.config import validate
 from steward.engine import Engine
 from steward.server import application
 from steward.state import State
+from steward.storage import Copier, filesystem_call
 from steward.supervisor import APIError, Supervisor
 
 
@@ -30,6 +34,80 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
 
     def auth(self):
         return {"Authorization": "Bearer " + self.state.identity["api_token"]}
+
+    async def test_api_remains_responsive_during_slow_tree_scan(self):
+        source = Path(self.temp.name) / "source"
+        target = Path(self.temp.name) / "target"
+        source.mkdir()
+        target.mkdir()
+        entered, release = Event(), Event()
+
+        def slow_count(path):
+            entered.set()
+            if not release.wait(5):
+                raise TimeoutError("API did not respond while filesystem scan was active")
+            return 1
+
+        cfg = dict(self.engine.cfg, destination_mount=str(target))
+        copier = Copier(cfg, AsyncMock())
+        with (
+            patch("steward.storage.count_files", side_effect=slow_count),
+            patch("steward.storage.command", new=AsyncMock(return_value="")),
+        ):
+            task = asyncio.create_task(copier.verify(source, target, "sha256"))
+            try:
+                self.assertTrue(await asyncio.to_thread(entered.wait, 1))
+                response = await asyncio.wait_for(self.client.get("/v1/status", headers=self.auth()), 1)
+                self.assertEqual(response.status, 200)
+                self.assertFalse(task.done())
+            finally:
+                release.set()
+                await task
+
+    async def test_cancelled_scan_is_drained_before_cleanup_can_proceed(self):
+        entered, release, finished = Event(), Event(), Event()
+
+        def scan():
+            entered.set()
+            release.wait(5)
+            finished.set()
+
+        task = asyncio.create_task(filesystem_call(scan))
+        self.assertTrue(await asyncio.to_thread(entered.wait, 1))
+        task.cancel()
+        await asyncio.sleep(0.01)
+        self.assertFalse(task.done())
+        release.set()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertTrue(finished.is_set())
+
+    async def test_schedule_change_arms_next_future_time_only(self):
+        self.engine.cfg.update(
+            execution_mode="production",
+            legacy_scheduler_disabled=True,
+            source_uuid="11111111-1111-4111-8111-111111111111",
+            destination_uuid="22222222-2222-4222-8222-222222222222",
+            power_entity="switch.disk",
+        )
+        with patch.dict("os.environ", {"STEWARD_INGRESS_IP": "127.0.0.1"}):
+            client = TestClient(TestServer(application(self.engine, ingress=True)))
+            await client.start_server()
+            self.addAsyncCleanup(client.close)
+            now = datetime(2026, 10, 29, 19, 18, tzinfo=timezone.utc)
+            with patch("steward.server.datetime") as clock:
+                clock.now.return_value = now
+                response = await client.put(
+                    "/v1/config", json={"schedule_enabled": True}, headers={"X-Steward-UI": "1"}
+                )
+            self.assertEqual(response.status, 200, await response.text())
+            self.assertEqual(self.state.data["schedule_not_before"], "2026-10-30T03:00:00+00:00")
+            # Ordinary policy edits do not postpone the armed occurrence.
+            response = await client.put("/v1/config", json={"l2_keep": 4}, headers={"X-Steward-UI": "1"})
+            self.assertEqual(response.status, 200)
+            self.assertEqual(self.state.data["schedule_not_before"], "2026-10-30T03:00:00+00:00")
+            persisted = State(Path(self.temp.name))
+            self.assertEqual(persisted.data["schedule_not_before"], self.state.data["schedule_not_before"])
 
     async def test_restore_preview_accepts_missing_area_without_creating_it(self):
         primary = Path(self.temp.name).resolve() / "media" / "NAS"

@@ -12,6 +12,14 @@ Read the installation guide, security model and migration checklist at:
 
 https://github.com/rpmlourenco/ha-backup-steward
 
+## Scheduling and progress
+
+Enabling the schedule or changing its time/timezone arms the next future occurrence. Enabling a 04:00 schedule in the evening waits until 04:00 the next day. This boundary survives app restarts. Once active, a missed daily occurrence can still run after a temporary interruption; checksum catch-up is unchanged.
+
+Settings cannot be saved while an operation or destination session is active, recovery is pending, or the connection is unconfirmed. The settings dialog explains the reason and keeps unsaved edits while the status updates. Full SHA-256 verification shows the cumulative processed-file count and active area on the main screen, refreshed by the normal status polling. Size checks and the separate L2 archive checksum are excluded from this full-check count.
+
+The obsolete confirmation about disabling the old agenda has been removed. Old saved values are ignored on upgrade; encryption, disk identities and concurrency checks remain required.
+
 ## Restore L3
 
 Use **Restaurar L3** to restore the current L3 mirror to all original areas or any selected combination. Close the manual destination session first. Stop applications that use the selected areas before restoring; Steward does not stop or restart them automatically.

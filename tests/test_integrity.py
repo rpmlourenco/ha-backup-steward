@@ -14,6 +14,21 @@ from steward.storage import Copier
 
 
 class IntegrityTests(unittest.TestCase):
+    def test_live_checked_count_is_published_without_per_file_writes(self):
+        reports = []
+        run = IntegrityRun(100, reports.append)
+        area = run.plan("/media/a", "/media/b", "sha256")
+        with patch("steward.integrity.monotonic", return_value=100):
+            run.begin(area)
+            run.line(area, "= first.flac")
+        self.assertEqual(len(reports), 1)
+        with patch("steward.integrity.monotonic", return_value=101.1):
+            run.line(area, "= second.flac")
+        self.assertEqual(reports[-1]["areas"][0]["checked"], 2)
+        self.assertEqual(reports[-1]["areas"][0]["status"], "running")
+        run.end(area)
+        self.assertEqual(reports[-1]["areas"][0]["status"], "success")
+
     def test_global_unique_file_budget_spans_overlapping_checks(self):
         run = IntegrityRun(3)
         a = run.plan("/media/source", "/media/target/mirror/source", "size")

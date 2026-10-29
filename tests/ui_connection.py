@@ -1,6 +1,7 @@
 """Browser-only connection safety tests against temporary local fixture files."""
 
 import os
+import json
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -41,7 +42,7 @@ actions = (
 
 def status(busy):
     return {
-        "version": "0.1.15",
+        "version": "0.1.16",
         "busy": busy,
         "can_cancel": busy,
         "mode": "production",
@@ -216,6 +217,56 @@ try:
         assert page.locator("#l2-state").inner_text() == "Sem dados"
         assert "Ainda sem resultados" in page.locator("#backup-summary").inner_text()
         assert page.locator("#last-success").inner_text() == "Ainda sem backup registado"
+        # Editing the weekday is saveable while idle, with a reason when locked.
+        options = json.loads((root.parents[1] / "config.json").read_text(encoding="utf-8"))["options"]
+        page.route("**/v1/config", lambda r: r.fulfill(json=options))
+        page.locator("#settings-toggle").click()
+        page.locator('[name="checksum_weekday"]').select_option("0")
+        assert page.locator("#config-save").is_enabled()
+        assert page.locator('[name="legacy_scheduler_disabled"]').count() == 0
+        assert page.locator("#config-save-reason").inner_text() == ""
+        value = status(True)
+        value["state"]["integrity"] = {
+            "status": "running",
+            "error_count": 0,
+            "error_limit": 1000,
+            "areas": [
+                {
+                    "kind": "sha256",
+                    "source": "/media/first",
+                    "destination": "/media/offline/first",
+                    "status": "success",
+                    "checked": 100,
+                    "errors": 0,
+                },
+                {
+                    "kind": "sha256",
+                    "source": "/media/second",
+                    "destination": "/media/offline/second",
+                    "status": "running",
+                    "checked": 23,
+                    "errors": 0,
+                },
+                {"kind": "size", "source": "/media/first", "status": "success", "checked": 100, "errors": 0},
+            ],
+        }
+        response = hold_refresh()
+        response.fulfill(json=value)
+        page.wait_for_function("document.getElementById('checksum-progress').textContent.includes('123')")
+        assert page.locator("#config-save").is_disabled()
+        assert "durante a execução" in page.locator("#config-save-reason").inner_text()
+        assert page.locator('[name="checksum_weekday"]').input_value() == "0"
+        page.locator("#close-settings").click()
+        assert page.locator("#checksum-progress").is_visible()
+        assert "/media/second" in page.locator("#checksum-progress").inner_text()
+        value["state"]["integrity"]["areas"][1]["checked"] = 30
+        response = hold_refresh()
+        response.fulfill(json=value)
+        page.wait_for_function("document.getElementById('checksum-progress').textContent.includes('130')")
+        response = hold_refresh()
+        response.fulfill(json=status(False))
+        page.wait_for_function("!document.getElementById('config-save').disabled")
+        assert page.locator("#checksum-progress").is_hidden()
         assert posts == [] and not errors, (posts, errors)
         browser.close()
         print(

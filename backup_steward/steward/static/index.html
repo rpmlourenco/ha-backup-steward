@@ -50,6 +50,7 @@
             <p id="hero-description">
               O estado da última execução aparece aqui.
             </p>
+            <p id="checksum-progress" role="status" hidden></p>
             <div class="hero-actions">
               <button class="primary" id="run" disabled>
                 <svg viewBox="0 0 24 24">
@@ -218,9 +219,6 @@
               <option value="test">Teste · cópia separada, sem retenção</option>
               <option value="production">Produção</option>
             </select></label
-          ><label class="check"
-            ><input type="checkbox" name="legacy_scheduler_disabled" />Confirmei
-            que a agenda antiga está desativada</label
           >
         </fieldset>
         <fieldset>
@@ -353,6 +351,7 @@
             /></label>
           </div>
         </details>
+        <p id="config-save-reason" class="help" role="status"></p>
         <p id="form-error" class="form-error" role="alert"></p>
         <div class="dialog-actions">
           <button type="button" id="pair" disabled class="secondary">

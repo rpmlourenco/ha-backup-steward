@@ -4,7 +4,7 @@
 
 Encrypted Home Assistant backups, verified offline copies, and safe disk shutdown — packaged as one app with a lightweight companion integration.
 
-> **Experimental 0.1.15.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
+> **Experimental 0.1.16.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
 
 ![Backup Steward interface](docs/images/overview.png)
 
@@ -65,7 +65,7 @@ Set source/destination UUIDs, paths and power switch explicitly. Defaults contai
 - **Test:** creates real encrypted L2 archives under `<source>/backup-steward-test/level-2`, copies only that test tree to `<destination>/backup-steward-test/mirror`, never rotates L2 or prunes L3 history. It exercises the actual disk lifecycle.
 - **Production:** L2 into the configured archive directory and complete L3 mirror/history. Can recognize the established `L2_NASRUI_apps_*` archives for retention, but only after a new Steward L2 is delivered and validated.
 
-Test/production require an encryption key and acknowledgement that the legacy schedule is disabled. Do not run the old scripts manually at the same time. A host transient `flock` lease shares the old L3 lock and blocks concurrent L3 workers, but cannot prevent an operator starting a separate legacy L2 creation.
+Test/production require an encryption key. The retired legacy-schedule acknowledgement is no longer required. Do not run the old scripts manually at the same time. A host transient `flock` lease shares the old L3 lock and blocks concurrent L3 workers, but cannot prevent an operator starting a separate legacy L2 creation.
 
 ### Checksums and scheduling
 

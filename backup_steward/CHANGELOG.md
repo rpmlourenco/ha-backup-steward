@@ -1,3 +1,11 @@
+# 0.1.16 — Predictable scheduling and visible verification progress
+
+- Enabling or rescheduling the app agenda arms the next future occurrence, rather than starting an overdue backup immediately. Persist that boundary across app restarts; ordinary settings edits do not postpone it.
+- Explain why saving settings is blocked during operations, recovery or a lost connection. Preserve unsaved field edits while polling.
+- Show the cumulative number of full SHA-256 files processed and the active area on the main screen. Publish progress during verification with throttled state writes.
+- Run recursive filesystem scans and archive inspection outside the API event loop. Wait for an active scan to finish before cancellation proceeds to disk cleanup; retain the existing connection timeout and report specific safe failure categories.
+- Remove the obsolete legacy-schedule acknowledgement from the UI, app options and execution requirements. Ignore its old stored value when upgrading.
+
 # 0.1.15 — Create missing original directories during L3 restore
 
 - Accept absent original data areas in restore preparation instead of returning a server error. Show directories that will be created after confirmation.

@@ -1,7 +1,5 @@
 """Small authenticated app client. Scheduling is never implemented in Core."""
 
-import asyncio
-
 import aiohttp
 
 
@@ -30,10 +28,12 @@ class Client:
                 if response.status in (401, 403):
                     raise InvalidAuth
                 if response.status >= 300:
-                    raise CannotConnect("The app rejected the request")
+                    raise CannotConnect(f"App returned HTTP {response.status}")
                 return await response.json()
-        except (aiohttp.ClientError, TimeoutError, asyncio.TimeoutError) as error:
-            raise CannotConnect("Cannot contact Backup Steward") from error
+        except TimeoutError as error:
+            raise CannotConnect("App did not respond within 15 seconds") from error
+        except aiohttp.ClientError as error:
+            raise CannotConnect("Connection or response from app failed") from error
 
     async def status(self):
         return await self.request("GET", "status")

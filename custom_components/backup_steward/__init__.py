@@ -35,7 +35,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except InvalidAuth as error:
             raise ConfigEntryAuthFailed("Invalid Backup Steward pairing key") from error
         except CannotConnect as error:
-            raise UpdateFailed("Backup Steward app is unavailable") from error
+            raise UpdateFailed(f"Backup Steward app is unavailable: {error}") from error
 
     coordinator = DataUpdateCoordinator(
         hass,

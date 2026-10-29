@@ -1,6 +1,7 @@
 """One bounded integrity report and one error budget for the whole execution."""
 
 from pathlib import PurePosixPath
+from time import monotonic
 from . import telemetry
 
 
@@ -28,6 +29,7 @@ class IntegrityRun:
         self.limit_reached = False
         self.finished = False
         self.aborted = False
+        self.last_publish = 0.0
 
     def plan(self, source, destination, kind):
         key = (str(source), str(destination), kind)
@@ -64,6 +66,7 @@ class IntegrityRun:
         )
 
     def publish(self):
+        self.last_publish = monotonic()
         self.on_report(self.report())
 
     def begin(self, area):
@@ -115,6 +118,10 @@ class IntegrityRun:
                     "!": "read_error",
                 }[symbol],
             )
+
+        # Throttle durable reports rather than rewriting state for every file.
+        if monotonic() - self.last_publish >= 1:
+            self.publish()
 
     def end(self, area, failed=False):
         area["status"] = "failed" if failed or area["errors"] else "success"

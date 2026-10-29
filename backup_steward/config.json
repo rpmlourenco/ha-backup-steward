@@ -1,6 +1,6 @@
 {
   "name": "HA Backup Steward",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "slug": "backup_steward",
   "description": "Backups L2/L3, offline disks and integrity checks in one app. Experimental; observe-only by default.",
   "url": "https://github.com/rpmlourenco/ha-backup-steward",
@@ -45,7 +45,6 @@
   },
   "options": {
     "execution_mode": "observe",
-    "legacy_scheduler_disabled": false,
     "schedule_enabled": false,
     "schedule_time": "04:00",
     "timezone": "Europe/Madrid",
@@ -82,7 +81,6 @@
   },
   "schema": {
     "execution_mode": "list(observe|test|production)",
-    "legacy_scheduler_disabled": "bool",
     "schedule_enabled": "bool",
     "schedule_time": "str",
     "timezone": "str",

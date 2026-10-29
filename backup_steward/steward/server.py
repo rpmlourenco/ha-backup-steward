@@ -177,6 +177,13 @@ def application(engine, ingress=False):
             updated = validate(dict(engine.cfg, **body))
             telemetry.protect(updated.get("encryption_password"))
             atomic_json(engine.state.directory / "config.json", updated)
+            # Enabling or rescheduling starts with the next future occurrence,
+            # never an overdue time from before this explicit policy change.
+            if updated["schedule_enabled"] and any(
+                updated[key] != engine.cfg[key]
+                for key in ("schedule_enabled", "schedule_time", "timezone", "execution_mode")
+            ):
+                engine.state.update(schedule_not_before=next_run(datetime.now(timezone.utc), updated))
             engine.cfg = updated
             telemetry.announce_policy(updated)
             return web.json_response(public_config(updated))

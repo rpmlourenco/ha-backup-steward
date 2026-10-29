@@ -27,6 +27,9 @@ def checksum_due(now, cfg, last_success):
 def due(now, cfg, state):
     if not cfg["schedule_enabled"]:
         return False
+    not_before = state.get("schedule_not_before")
+    if not_before and now < datetime.fromisoformat(not_before):
+        return False
     local = now.astimezone(ZoneInfo(cfg["timezone"]))
     if local.strftime("%H:%M") < cfg["schedule_time"]:
         return False

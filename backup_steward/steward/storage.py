@@ -103,6 +103,18 @@ def count_files(root):
     return total
 
 
+async def filesystem_call(function, *args):
+    """Keep slow scans off the API loop; drain the worker before safe removal."""
+    worker = asyncio.create_task(asyncio.to_thread(function, *args))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        try:
+            await worker
+        finally:
+            raise
+
+
 async def command(*args, timeout=120, integrity=None):
     if Path(args[0]).name == "rclone":
         return await rclone_command(args, timeout, integrity)
@@ -270,12 +282,12 @@ class Copier:
             return
         self.check_paths(source, target)
         try:
-            if not count_files(source):
+            if not await filesystem_call(count_files, source):
                 self.integrity.problem(area, None, "unavailable", "Origem vazia; verificação recusada")
                 self.integrity.end(area, failed=True)
                 self.on_event("integrity_area_failed", f"{kind}: {source}; origem vazia; a continuar")
                 return
-            count_files(target)
+            await filesystem_call(count_files, target)
         except OSError as error:
             self.integrity.problem(area, None, "read_error", type(error).__name__)
             self.integrity.end(area, failed=True)
@@ -336,10 +348,10 @@ class Copier:
             await self.disks.validate_destination()
             confined(source, Path(c["source_mount"]) if test else source)
             confined(target, Path(c["destination_mount"]))
-            if not source.is_dir() or count_files(source) == 0:
+            current = await filesystem_call(count_files, source) if source.is_dir() else 0
+            if not current:
                 raise ValueError("Missing or empty source; refusing to copy")
-            current = count_files(source)
-            existing = count_files(target) if target.is_dir() else 0
+            existing = await filesystem_call(count_files, target) if target.is_dir() else 0
             if existing >= 20 and current < existing * (1 - c["max_missing_fraction"]):
                 raise ValueError("Too many source files disappeared; refusing sync")
             target.mkdir(parents=True, exist_ok=True)

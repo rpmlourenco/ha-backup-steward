@@ -17,7 +17,7 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(cfg["l2_keep"], 3)
         self.assertEqual(cfg["history_days"], 30)
 
-    def test_execution_requires_secret_and_explicit_legacy_ack(self):
+    def test_execution_requires_secret_without_retired_acknowledgement(self):
         base = {
             "execution_mode": "test",
             "source_uuid": "11111111-1111-4111-8111-111111111111",
@@ -26,9 +26,13 @@ class PolicyTests(unittest.TestCase):
         }
         with self.assertRaises(ValueError):
             validate(base)
-        with self.assertRaises(ValueError):
-            validate(dict(base, encryption_password="not-a-real-key"))
-        validate(dict(base, encryption_password="not-a-real-key", legacy_scheduler_disabled=True))
+        validate(dict(base, encryption_password="not-a-real-key"))
+        for old_value in (True, False):
+            cfg = validate(
+                dict(base, encryption_password="not-a-real-key", legacy_scheduler_disabled=old_value)
+            )
+            self.assertNotIn("legacy_scheduler_disabled", cfg)
+            self.assertNotIn("legacy_scheduler_disabled", public_config(cfg))
 
     def test_secrets_are_never_in_public_config(self):
         cfg = validate({"encryption_password": "private", "api_token": "private"})
@@ -79,6 +83,20 @@ class CalendarTests(unittest.TestCase):
         self.assertFalse(
             due(self.instant("2026-10-24T20:00:00+02:00"), self.cfg, {"last_schedule_date": "2026-10-24"})
         )
+
+    def test_enabling_after_time_waits_for_next_occurrence_and_survives_restart(self):
+        enabled = self.instant("2026-10-29T20:18:24+01:00")
+        state = {"schedule_not_before": next_run(enabled, self.cfg)}
+        self.assertFalse(due(enabled, self.cfg, state))
+        self.assertFalse(due(self.instant("2026-10-30T03:59:59+01:00"), self.cfg, dict(state)))
+        self.assertTrue(due(self.instant("2026-10-30T04:00:00+01:00"), self.cfg, dict(state)))
+        state["last_schedule_date"] = "2026-10-30"
+        self.assertFalse(due(self.instant("2026-10-30T12:00:00+01:00"), self.cfg, state))
+
+    def test_enabling_before_time_still_runs_today(self):
+        now = self.instant("2026-10-29T03:00:00+01:00")
+        state = {"schedule_not_before": next_run(now, self.cfg)}
+        self.assertTrue(due(self.instant("2026-10-29T04:00:00+01:00"), self.cfg, state))
 
     def test_dst_clock_change_keeps_four_am_local(self):
         spring = next_run(self.instant("2026-03-28T23:00:00+01:00"), self.cfg)

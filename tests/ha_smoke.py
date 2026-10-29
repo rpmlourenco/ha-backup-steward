@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+from unittest.mock import patch
 
 from aiohttp import web
 from aiohttp.test_utils import TestServer
@@ -21,7 +22,7 @@ async def main():
     destination_requests = []
     cancel_requests = []
     data = {
-        "version": "0.1.15",
+        "version": "0.1.16",
         "busy": False,
         "mode": "test",
         "schedule_enabled": False,
@@ -84,13 +85,21 @@ async def main():
                 assert result["type"] == "form", result
                 integration = await loader.async_get_integration(hass, "backup_steward")
                 assert integration.has_branding, "Local integration brand directory was not detected"
-                from custom_components.backup_steward.api import Client
+                from custom_components.backup_steward.api import Client, CannotConnect
                 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
                 probe = Client(
                     async_get_clientsession(hass), str(server.make_url("/")).rstrip("/"), "fixture-key"
                 )
                 assert await probe.status() == data
+                # Diagnostic categories must not include URLs, headers or credentials.
+                with patch.object(probe.session, "request", side_effect=TimeoutError("fixture-private")):
+                    try:
+                        await probe.status()
+                    except CannotConnect as error:
+                        assert str(error) == "App did not respond within 15 seconds"
+                    else:
+                        raise AssertionError("Timeout did not fail the status request")
                 result = await hass.config_entries.flow.async_configure(
                     result["flow_id"],
                     {

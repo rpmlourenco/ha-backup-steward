@@ -174,9 +174,9 @@ class Supervisor:
             raise APIError("Incomplete HTTP download")
         if target.exists() or target.is_symlink():
             raise APIError("Refusing to overwrite an existing archive")
-        from .storage import inspect_archive
+        from .storage import filesystem_call, inspect_archive
 
-        archive = inspect_archive(partial)
+        archive = await filesystem_call(inspect_archive, partial)
         if archive["slug"] != slug:
             raise APIError("Downloaded archive has the wrong slug")
         os.replace(partial, target)
