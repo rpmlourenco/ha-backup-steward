@@ -59,6 +59,9 @@ def announce_policy(cfg):
         f"Agenda disponível e pronta: {state}; hora={cfg['schedule_time']}; fuso={cfg['timezone']}; checksum={cfg['checksum_frequency']}"
     )
     event(
+        "L1 nativo: " + ("integrado no ciclo, antes do L2/L3" if cfg.get("l1_enabled") else "não integrado")
+    )
+    event(
         "Encriptação: chave configurada"
         if cfg.get("encryption_password")
         else "Encriptação: chave ainda não configurada"

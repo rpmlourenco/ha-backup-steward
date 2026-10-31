@@ -46,6 +46,8 @@ async def control(engine, action):
             state.update(
                 needs_cleanup=True,
                 destination_manual=True,
+                destination_owned=True,
+                backup_kind=None,
                 config_snapshot=public_config(cfg),
                 backup_pending=False,
                 backup_job=None,

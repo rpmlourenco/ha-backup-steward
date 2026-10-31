@@ -240,8 +240,8 @@ class Copier:
         if include_copy:
             for origin, target in self.pairs(test):
                 self.integrity.plan(origin, target, "size")
-            origin, target = self.archive_pair(test)
-            self.integrity.plan(origin, target, "l2_sha256")
+            for origin, target, kind in self.archive_pairs(test):
+                self.integrity.plan(origin, target, kind)
         if include_full:
             for origin, target in self.verification_pairs(test, source):
                 self.integrity.plan(origin, target, "sha256")
@@ -252,6 +252,16 @@ class Copier:
         source = Path(c["source_mount"]) / (c["test_directory"] + "/level-2" if test else c["l2_directory"])
         target = self.pairs(test)[0][1] if test else self.pairs()[0][1] / c["l2_directory"]
         return source, target
+
+    def archive_pairs(self, test):
+        source, target = self.archive_pair(test)
+        yield source, target, "l2_sha256"
+        if self.cfg["l1_enabled"]:
+            source = Path(self.cfg["source_mount"]) / (
+                self.cfg["test_directory"] + "/level-1" if test else self.cfg["l1_directory"]
+            )
+            target = self.pairs(test)[1][1] if test else self.pairs()[0][1] / self.cfg["l1_directory"]
+            yield source, target, "l1_sha256"
 
     def abort_checks(self):
         self.integrity.abort()
@@ -329,12 +339,20 @@ class Copier:
         c = self.cfg
         destination = Path(c["destination_mount"])
         if test:
-            return [
+            pairs = [
                 (
                     Path(c["source_mount"]) / c["test_directory"] / "level-2",
                     destination / c["test_directory"] / "mirror" / Path(c["source_mount"]).name,
                 )
             ]
+            if c["l1_enabled"]:
+                pairs.append(
+                    (
+                        Path(c["source_mount"]) / c["test_directory"] / "level-1",
+                        destination / c["test_directory"] / "mirror" / "L1",
+                    )
+                )
+            return pairs
         return [
             (Path(s), destination / "mirror" / Path(s).name)
             for s in [c["source_mount"], *c["additional_sources"]]
@@ -385,9 +403,9 @@ class Copier:
             await self.verify(source, target, "size", test)
             if not self.integrity.plan(source, target, "size")["errors"]:
                 self.on_event("l3_verified", f"Cópia e tamanhos confirmados: {source}")
-        source, destination = self.archive_pair(test)
-        self.on_event("l2_archive_checksum", "A confirmar SHA-256 dos arquivos L2 entregues ao espelho")
-        await self.verify(source, destination, "l2_sha256", test)
+        for source, destination, kind in self.archive_pairs(test):
+            self.on_event("archive_checksum", "A confirmar SHA-256 dos arquivos L1/L2 entregues ao espelho")
+            await self.verify(source, destination, kind, test)
 
     def verification_pairs(self, test=False, source=None):
         verification_source(self.cfg, "checksum", source)

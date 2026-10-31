@@ -10,6 +10,7 @@ One repository contains two installable packages: a Supervisor app (`backup_stew
 | `schedule.py` | Daily local calendar, monthly/weekly checksum deadline and catch-up |
 | `state.py` | Atomic durable state and private installation identity |
 | `supervisor.py` | Native backup jobs, Core states/power and streamed delivery |
+| `native_l1.py` | Native automatic-settings L1, durable second copy and confined L1 retention |
 | `disks.py` | Host systemd D-Bus, shared legacy lock, UUID mounts, final SCSI proof |
 | `storage.py` | Confined files, archive identity/retention, rclone copy/check/history |
 | `integrity.py` | Global distinct-file error budget, per-check results and bounded examples |
@@ -24,6 +25,14 @@ Multiple testable modules are intentionally packaged together. Minimizing loose 
 The current patch solves ordering: backup delivery is awaited before success or expiry. That is an engine invariant here, not a patch to another installation. `POST /backups/new/partial` includes all apps and explicitly selected non-media folders. The job ID is recorded before polling. The archive is correlated by an unpredictable per-run name, validated for encryption/compression, downloaded, checked and flushed before native deletion or retention.
 
 Native backup job errors/timeout never imply that it is safe to remove the destination; an uncertain job keeps the host lease and power on. No Core private backup-manager objects or exported Supervisor tokens are used.
+
+## Native L1 coordination
+
+The opt-in L1 phase precedes destination power-on and shares the engine lock and app calendar. Only allowlisted Core WebSocket commands are used: `backup/config/info`, `backup/generate_with_automatic_settings` and `backup/info`. The policy reader discards secrets immediately and returns only safe assertions. The native schedule must be `never`, local storage must be selected and encrypted, and native selection/destination policies remain authoritative.
+
+A `backup_job_id` is persisted before polling the Supervisor job; its `reference` pins the archive, rather than guessing by latest date/name. Completion waits for Core to become idle and rejects recorded native destination/content failures. The encrypted archive is streamed through the existing validated download path and preserved in native storage. NASRUI copies have separate filename-confined retention and enter the regular L3 tree plus dedicated SHA-256 archive checks.
+
+`backup_kind`, `backup_pending` and `destination_owned` distinguish an uncertain L1 from an acquired L3 disk. Native-only recovery confirms the same job and releases the lease without physical disk actions. Cancellation/app stop preserve uncertainty; subsequent manual destination sessions explicitly record physical ownership. Existing state without these new fields retains the established L2/L3 recovery behaviour.
 
 ## Host boundary
 

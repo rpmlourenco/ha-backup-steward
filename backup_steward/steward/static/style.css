@@ -327,7 +327,7 @@ h2 {
 }
 .steps {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin-top: 26px;
 }
 .steps > div {
@@ -648,7 +648,7 @@ summary {
     grid-template-columns: 1fr 1fr;
     gap: 24px;
   }
-  .steps > div:nth-child(3) {
+  .steps > div:nth-child(odd) {
     border-left: 0;
     padding-left: 0;
   }

@@ -109,6 +109,33 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
             persisted = State(Path(self.temp.name))
             self.assertEqual(persisted.data["schedule_not_before"], self.state.data["schedule_not_before"])
 
+    async def test_l1_settings_reject_native_schedule_and_recheck_busy_after_policy(self):
+        self.engine.api.l1_policy.side_effect = APIError("Disable only the native schedule")
+        with patch.dict("os.environ", {"STEWARD_INGRESS_IP": "127.0.0.1"}):
+            async with TestClient(TestServer(application(self.engine, ingress=True))) as client:
+                response = await client.put(
+                    "/v1/config", json={"l1_enabled": True}, headers={"X-Steward-UI": "1"}
+                )
+                self.assertEqual(response.status, 400)
+                self.assertFalse(self.engine.cfg["l1_enabled"])
+
+                async def policy():
+                    self.state.update(needs_cleanup=True)
+
+                self.engine.api.l1_policy.side_effect = policy
+                response = await client.put(
+                    "/v1/config", json={"l1_enabled": True}, headers={"X-Steward-UI": "1"}
+                )
+                self.assertEqual(response.status, 400)
+                self.assertFalse(self.engine.cfg["l1_enabled"])
+                self.state.update(needs_cleanup=False)
+                self.engine.api.l1_policy.side_effect = None
+                response = await client.put(
+                    "/v1/config", json={"l1_enabled": True}, headers={"X-Steward-UI": "1"}
+                )
+                self.assertEqual(response.status, 200)
+                self.assertTrue(self.engine.cfg["l1_enabled"])
+
     async def test_restore_preview_accepts_missing_area_without_creating_it(self):
         primary = Path(self.temp.name).resolve() / "media" / "NAS"
         primary.mkdir(parents=True)

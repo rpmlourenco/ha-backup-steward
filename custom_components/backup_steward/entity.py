@@ -17,6 +17,6 @@ class StewardEntity(CoordinatorEntity):
             "identifiers": {(DOMAIN, instance)},
             "name": "Backup Steward",
             "manufacturer": "HA Backup Steward",
-            "model": "L2/L3 backup app",
+            "model": "L1/L2/L3 backup app",
             "sw_version": self.coordinator.data["version"],
         }

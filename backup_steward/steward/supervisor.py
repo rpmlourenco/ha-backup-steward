@@ -87,6 +87,82 @@ class Supervisor:
         if status not in ("off", "missing"):
             raise APIError("Auto Backup is busy or unavailable")
 
+    async def core_ws(self, command):
+        if command not in ("backup/config/info", "backup/info", "backup/generate_with_automatic_settings"):
+            raise ValueError("Unsupported native backup command")
+        async with asyncio.timeout(60):
+            async with self.session.ws_connect(self.base + "/core/websocket") as ws:
+                if (await ws.receive_json()).get("type") != "auth_required":
+                    raise APIError("Unexpected Core authentication handshake")
+                await ws.send_json({"type": "auth", "access_token": self.headers["Authorization"][7:]})
+                if (await ws.receive_json()).get("type") != "auth_ok":
+                    raise APIError("Native backup API authentication failed")
+                await ws.send_json({"id": 1, "type": command})
+                while True:
+                    response = await ws.receive_json()
+                    if response.get("id") != 1:
+                        continue
+                    if response.get("success") is not True:
+                        raise APIError("Native backup API rejected " + command)
+                    return response["result"]
+
+    async def l1_policy(self):
+        config = (await self.core_ws("backup/config/info"))["config"]
+        selection = config["create_backup"]
+        if config["schedule"]["recurrence"] != "never":
+            raise APIError("Disable only the native HA backup schedule before enabling L1 in Steward")
+        if "hassio.local" not in selection["agent_ids"]:
+            raise APIError("Select local storage in native L1 backup settings")
+        if (
+            not selection.get("password")
+            or config.get("agents", {}).get("hassio.local", {}).get("protected") is False
+        ):
+            raise APIError("Native local L1 must use encryption")
+        # Do not return, log or persist native passwords or full configuration.
+        return {"local": True, "encrypted": True}
+
+    async def wait_native_idle(self, minutes):
+        async with asyncio.timeout(minutes * 60):
+            while True:
+                status = await self.core_state("sensor.backup_backup_manager_state")
+                if status == "idle":
+                    return
+                if status not in ("create_backup", "blocked", "receive_backup", "restore_backup"):
+                    raise APIError("Native backup manager is unavailable")
+                await asyncio.sleep(2)
+
+    async def create_l1(self):
+        result = await self.core_ws("backup/generate_with_automatic_settings")
+        job = result.get("backup_job_id", "")
+        if not re.fullmatch(r"[a-f0-9]{32}", job):
+            raise APIError("Native L1 did not return a valid job ID")
+        return job
+
+    async def finish_l1(self, job, minutes):
+        try:
+            result = await self.wait_job(job, minutes)
+        except JobFailed:
+            await self.wait_native_idle(minutes)
+            raise
+        await self.wait_native_idle(minutes)
+        slug = result.get("reference", "")
+        if not isinstance(slug, str) or not re.fullmatch(r"[a-f0-9]{8}", slug):
+            raise APIError("Cannot correlate the native L1 job with its archive")
+        status = await self.core_ws("backup/info")
+        matches = [b for b in status["backups"] if b.get("backup_id") == slug]
+        if len(matches) != 1:
+            raise APIError("Native L1 is not available after completion")
+        backup = matches[0]
+        if any(backup.get(k) for k in ("failed_agent_ids", "failed_addons", "failed_folders")):
+            raise JobFailed("Native L1 finished with failed destinations or contents")
+        local = backup.get("agents", {}).get("hassio.local", {})
+        if local.get("protected") is not True:
+            raise APIError("Native L1 has no encrypted local copy")
+        info = await self.request("GET", f"/backups/{slug}/info")
+        if info.get("protected") is not True or info.get("compressed") is not True:
+            raise APIError("Native L1 archive is not encrypted and compressed")
+        return slug, info
+
     async def notify(self, message):
         await self.request(
             "POST",
@@ -129,7 +205,7 @@ class Supervisor:
                     if result.get("errors"):
                         raise JobFailed("Supervisor backup job failed; inspect Supervisor logs")
                     telemetry.event(f"Trabalho nativo concluído; trabalho={job}")
-                    return
+                    return result
                 await asyncio.sleep(2)
 
     async def find_backup(self, name):

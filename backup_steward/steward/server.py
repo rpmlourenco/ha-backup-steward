@@ -14,6 +14,7 @@ from . import VERSION
 from .config import public_config, validate
 from .schedule import due, next_run
 from .state import atomic_json
+from .supervisor import APIError
 from . import telemetry
 
 
@@ -69,6 +70,8 @@ def application(engine, ingress=False):
                 "timezone": engine.cfg["timezone"],
                 "checksum_frequency": engine.cfg["checksum_frequency"],
                 "next_run": next_run(now, engine.cfg),
+                "l1_enabled": engine.cfg["l1_enabled"],
+                "l1_keep": engine.cfg["l1_keep"],
                 "daily_retention_days": engine.cfg["l2_keep"],
                 "destination_mount": engine.cfg["destination_mount"],
                 "verification_sources": [engine.cfg["source_mount"]]
@@ -175,6 +178,13 @@ def application(engine, ingress=False):
             if body.get("encryption_password") == "":
                 body.pop("encryption_password")
             updated = validate(dict(engine.cfg, **body))
+            if updated["l1_enabled"]:
+                try:
+                    await engine.api.l1_policy()
+                except APIError as error:
+                    raise ValueError(str(error)) from None
+                if engine.busy or engine.state.data.get("needs_cleanup"):
+                    raise ValueError("Finish or recover the current operation before editing settings")
             telemetry.protect(updated.get("encryption_password"))
             atomic_json(engine.state.directory / "config.json", updated)
             # Enabling or rescheduling starts with the next future occurrence,

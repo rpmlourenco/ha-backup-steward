@@ -23,6 +23,9 @@ DEFAULTS = {
     "additional_sources": ["/media/immich", "/media/filebrowser"],
     "l2_directory": "backups/home-assistant/level-2",
     "test_directory": "backup-steward-test",
+    "l1_enabled": False,
+    "l1_directory": "backups/home-assistant/level-1",
+    "l1_keep": 3,
     "l2_keep": 3,
     "history_days": 30,
     "integrity_error_limit": 1000,
@@ -63,7 +66,7 @@ def validate(raw):
         raise ValueError("Unknown configuration options: " + ", ".join(sorted(unknown)))
     cfg = copy.deepcopy(DEFAULTS)
     cfg.update(raw)
-    for key in ("schedule_enabled",):
+    for key in ("schedule_enabled", "l1_enabled"):
         if type(cfg[key]) is not bool:
             raise ValueError(f"{key} must be boolean")
     if cfg["execution_mode"] not in ("observe", "test", "production"):
@@ -76,6 +79,7 @@ def validate(raw):
     for key, lo, hi in (
         ("checksum_weekday", 0, 6),
         ("checksum_month_week", 1, 4),
+        ("l1_keep", 1, 365),
         ("l2_keep", 1, 365),
         ("history_days", 1, 3650),
         ("integrity_error_limit", 1, 1000000),
@@ -109,6 +113,10 @@ def validate(raw):
         media_path(value)
     if len(set(sources + [cfg["source_mount"], cfg["destination_mount"]])) != len(sources) + 2:
         raise ValueError("Duplicate or overlapping sources")
+    relative_path(cfg["l1_directory"])
+    a, b = PurePosixPath(cfg["l1_directory"]), PurePosixPath(cfg["l2_directory"])
+    if a.is_relative_to(b) or b.is_relative_to(a):
+        raise ValueError("L1 and L2 archive directories must be separate")
     relative_path(cfg["l2_directory"])
     relative_path(cfg["test_directory"])
     if cfg["power_entity"] and not re.fullmatch(r"switch\.[a-z0-9_]+", cfg["power_entity"]):

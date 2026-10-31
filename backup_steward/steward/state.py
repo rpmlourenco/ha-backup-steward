@@ -70,7 +70,7 @@ class State:
                 )
             elif status == "success":
                 telemetry.event(
-                    f"Execução concluída; L2={self.data.get('l2')}; L3={self.data.get('l3')}; retenção={self.data.get('retention')}; destino desligado em segurança",
+                    f"Execução concluída; L1={self.data.get('l1', 'skipped')}; L2={self.data.get('l2')}; L3={self.data.get('l3')}; retenção={self.data.get('retention')}; destino desligado em segurança",
                     run_id,
                 )
             elif status == "interrupted":
@@ -79,7 +79,12 @@ class State:
                     run_id,
                     logging.WARNING,
                 )
-        for key, label in (("l2", "Resultado L2"), ("l3", "Resultado L3"), ("retention", "Retenção L2")):
+        for key, label in (
+            ("l1", "Resultado L1"),
+            ("l2", "Resultado L2"),
+            ("l3", "Resultado L3"),
+            ("retention", "Retenção L2"),
+        ):
             if key in kwargs and kwargs[key] != previous[key] and kwargs[key] not in ("pending", "skipped"):
                 telemetry.event(
                     f"{label}: {kwargs[key]}",
@@ -113,6 +118,11 @@ class State:
             "mode",
             "execution_mode",
             "state",
+            "l1",
+            "l1_retention",
+            "l1_removed",
+            "l1_file",
+            "l1_slug",
             "l2",
             "l3",
             "retention",

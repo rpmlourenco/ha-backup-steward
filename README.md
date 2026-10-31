@@ -4,7 +4,7 @@
 
 Encrypted Home Assistant backups, verified offline copies, and safe disk shutdown — packaged as one app with a lightweight companion integration.
 
-> **Experimental 0.1.16.** Local automated tests and container builds are not HAOS hardware acceptance. Keep the established backup scripts and `80-local-media.rules` installed during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
+> **Experimental 0.1.17.** Local automated tests and container builds are not HAOS hardware acceptance. Keep known-good backups and the existing `80-local-media.rules` source automount during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
 
 ![Backup Steward interface](docs/images/overview.png)
 
@@ -67,6 +67,20 @@ Set source/destination UUIDs, paths and power switch explicitly. Defaults contai
 
 Test/production require an encryption key. The retired legacy-schedule acknowledgement is no longer required. Do not run the old scripts manually at the same time. A host transient `flock` lease shares the old L3 lock and blocks concurrent L3 workers, but cannot prevent an operator starting a separate legacy L2 creation.
 
+## Native L1 in the Steward cycle
+
+L1 is optional (`l1_enabled`, off on upgrade). Once enabled, scheduled and manual backups run **L1 → encrypted L1 delivery to NASRUI → L2 → L3 → safe shutdown**. A checksum-only or restore operation never creates L1. The existing app schedule controls the whole sequence; no HA automation is added.
+
+Before enabling L1 in Steward, set only the native backup schedule to **Never** in **Settings → System → Backups**. Preserve its app/folder selection, local/cloud destinations, password and retention. Keep local storage enabled and encrypted. Steward rejects enabling L1 if the native scheduler is still active, and checks again before each L1. The native L1 key remains the HA recovery-kit key; the L2 password in Steward is independent.
+
+The native L1 remains in its configured destinations. Steward also downloads the same encrypted archive, without decrypting it, to `<source>/backups/home-assistant/level-1` (`l1_directory`). This is a second copy on the NASRUI/L2 storage tier, not an archive embedded inside another archive. Only Steward-managed copies in that directory use `l1_keep` (default 3); native retention is unchanged. The full source tree is mirrored to L3, so the L1 copies also reach HAL3 and receive a separate SHA-256 archive comparison even when the monthly full scan is skipped.
+
+L1 creation and all configured native destination deliveries must finish before L2 starts. A failure stops the cycle and notifies; inspect the separate level results. L1 is created before HAL3 is powered on. A lost creation response or app stop blocks new work until recovery confirms the original native job. Recovery never recreates L1, and never unmounts or powers off HAL3 if it was not acquired. A lost response with no known job requires diagnosis rather than guessing which backup belongs to the run.
+
+In test mode, native L1 creation still uses the configured HA selection/destinations. Its additional copies and L3 test mirror are isolated under `backup-steward-test`; Steward skips archive retention there. Test mode is not a dry run and native HA retention still applies.
+
+Restoring L1 remains a native HA operation using the native recovery key. L1 snapshots and per-level results survive later checks in the backup summary; the companion integration adds an L1 result sensor without renaming existing entities.
+
 ### Checksums and scheduling
 
 Every backup gets normal copy verification and L2 archive hashing. The configurable full checksum additionally reads every file in all configured source/mirror pairs. It is independent of the normal copy checks.
@@ -105,7 +119,7 @@ Any integrity error leaves the execution failed, preserves the last successful b
 
 ## Status and recovery
 
-The app keeps atomic bounded state and events in `/data/steward`. The integration exposes status/stage, L2/L3/retention results, last success/checksum, next run, running/schedule/recovery indicators, and manual backup/checksum/recovery buttons.
+The app keeps atomic bounded state and events in `/data/steward`. The integration exposes status/stage, L1/L2/L3/retention results, last success/checksum, next run, running/schedule/recovery indicators, and manual backup/checksum/recovery buttons.
 
 An interrupted app does not blindly restart a copy or power off the disk. The UI shows recovery required and blocks new executions. **Concluir fecho seguro** first checks native backup completion and physical identities. Unknown native job outcomes, disk disappearance without flush confirmation, or journal/identity failures intentionally require manual diagnosis. A restart of Core alone does not interrupt the app's work.
 

@@ -42,7 +42,7 @@ actions = (
 
 def status(busy):
     return {
-        "version": "0.1.16",
+        "version": "0.1.17",
         "busy": busy,
         "can_cancel": busy,
         "mode": "production",
@@ -164,6 +164,7 @@ try:
             "mode": "backup_only",
             "execution_mode": "production",
             "state": "success",
+            "l1": "delivered",
             "l2": "delivered",
             "l3": "success",
             "retention": "success",
@@ -189,12 +190,21 @@ try:
             response.fulfill(json=value)
             page.wait_for_function("!document.getElementById('settings-toggle').disabled")
             assert page.locator("#run-id").inner_text() == "backup-fixture"
+            assert page.locator("#l1-state").inner_text() == "Concluído"
             assert page.locator("#l2-state").inner_text() == "Concluído"
             assert page.locator("#l3-state").inner_text() == "Concluída"
             assert page.locator("#retention-state").inner_text() == "Aplicada"
             assert page.locator("#cleanup-state").inner_text() == "Disco desligado"
             assert "26" in page.locator("#last-success").inner_text()
             assert "Último backup" in page.locator("#backup-summary").inner_text()
+        if os.environ.get("STEWARD_UI_SCREENSHOT_DIR"):
+            shots = Path(os.environ["STEWARD_UI_SCREENSHOT_DIR"])
+            shots.mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(shots / "l1-overview-desktop.png"), full_page=True)
+            page.set_viewport_size({"width": 390, "height": 844})
+            page.screenshot(path=str(shots / "l1-overview-mobile.png"), full_page=True)
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+            page.set_viewport_size({"width": 1280, "height": 1000})
         value = status(True)
         value["state"].update(
             run_id="active-backup",
@@ -224,6 +234,8 @@ try:
         page.locator('[name="checksum_weekday"]').select_option("0")
         assert page.locator("#config-save").is_enabled()
         assert page.locator('[name="legacy_scheduler_disabled"]').count() == 0
+        assert page.locator('[name="l1_enabled"]').count() == 1
+        assert page.locator('[name="l1_keep"]').input_value() == "3"
         assert page.locator("#config-save-reason").inner_text() == ""
         value = status(True)
         value["state"]["integrity"] = {

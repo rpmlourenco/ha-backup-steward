@@ -36,6 +36,7 @@ const labels = {
 const phases = {
   pending: "A aguardar",
   delivered: "Entregue",
+  created: "Criado; cópia pendente",
   success: "Concluído",
   failed: "Por confirmar",
   skipped: "Não solicitado",
@@ -122,6 +123,7 @@ async function refresh() {
 function render() {
   const s = current.state;
   const recovery = s.recovery_required ?? (s.needs_cleanup && !current.busy);
+  const nativeRecovery = recovery && s.backup_kind === "l1" && s.destination_owned === false;
   const manual = s.state === "destination_mounted" && !current.busy;
   $("version").textContent = `v${current.version}`;
   $("mode").textContent = {
@@ -208,14 +210,21 @@ function render() {
   }
   $("backup-verification").disabled = !operationAvailable("backup");
   $("verification-source").disabled = !operationAvailable("checksum");
+  $("recover").textContent = nativeRecovery ? "Recuperar L1" : "Concluir fecho seguro";
+  if (nativeRecovery) {
+    $("hero-title").textContent = "Vamos confirmar o backup L1.";
+    $("hero-description").textContent = "A recuperação confirma o fim do L1 nativo sem criar outro backup. O destino L3 não foi ligado.";
+    $("banner").textContent = "Estado do L1 por confirmar. Usa Recuperar L1 antes de iniciar outro backup.";
+  }
   $("recover").hidden = !recovery;
   $("recover").disabled = current.busy || current.mode === "observe";
   $("destination-mount").disabled =
     current.busy || current.mode === "observe" || !!s.needs_cleanup;
   $("destination-shutdown").disabled =
-    current.busy || current.mode === "observe" || !s.needs_cleanup;
+    current.busy || current.mode === "observe" || !s.needs_cleanup || nativeRecovery;
   $("destination-status").textContent =
     `${current.destination_mount || "Destino"} · ${manual ? "Ligado e montado manualmente" : s.state === "destination_mounting" ? "A ligar e montar" : s.needs_cleanup ? "Fecho seguro pendente" : s.state === "destination_off" ? "Desligado em segurança" : "Disponível para montagem manual"}`;
+  if (nativeRecovery) $("destination-status").textContent = "O destino L3 não foi ligado; confirma primeiro o L1.";
   $("next-run").textContent = current.schedule_enabled
     ? stamp(current.next_run)
     : "Agenda desativada";
@@ -241,12 +250,12 @@ function render() {
       ? "Backup em curso · Da criação ao fecho do disco."
       : `Último backup${backup.state === "success" ? ` — ${stamp(backup.last_success)}` : " · " + (labels[backup.state] || "Por confirmar")}${backup.execution_mode === "test" ? " · Teste" : ""}`;
   $("run-id").textContent = backup?.run_id || "";
-  for (const key of ["l2", "l3", "retention"]) {
+  for (const key of ["l1", "l2", "l3", "retention"]) {
     const val = backup?.[key];
     $(`${key}-state`).textContent = !backup ? "Sem dados" :
       key === "retention" && val === "success" ? "Aplicada" :
-      key === "l2" && val === "delivered" ? "Concluído" :
-      key === "l3" && val === "success" ? "Concluída" : phases[val] || "A aguardar";
+      ["l1", "l2"].includes(key) && val === "delivered" ? "Concluído" :
+      key === "l3" && val === "success" ? "Concluída" : phases[val] || (key === "l1" ? "Não incluído" : "A aguardar");
     document.querySelector(`[data-step="${key}"]`).classList.toggle(
       "complete", ["delivered", "success"].includes(val));
   }
@@ -256,7 +265,7 @@ function render() {
     : backup.state === "cancelled" ? "Não utilizado" : "A aguardar";
   document.querySelector('[data-step="cleanup"]').classList.toggle("complete", !!closed);
   $("retention-note").textContent =
-    `Conserva ${current.daily_retention_days} backups L2. Com uma cópia diária, isso representa cerca de ${current.daily_retention_days} dias de recuperação. O histórico L3 tem uma retenção própria.`;
+    `${current.l1_enabled ? `Conserva ${current.l1_keep} cópias L1 no NASRUI e ` : "Conserva "}${current.daily_retention_days} backups L2. Com uma cópia diária, isso representa cerca de ${current.daily_retention_days} dias de recuperação. O histórico L3 tem uma retenção própria.`;
   const integrity = s.integrity;
   const fullAreas = (integrity?.areas || []).filter(a => a.kind === "sha256");
   const checked = fullAreas.reduce((sum, a) => sum + (a.checked || 0), 0);
@@ -271,7 +280,7 @@ function render() {
     for (const area of integrity.areas || []) {
       const row = document.createElement("tr");
       const statusLabel = {pending: "Não verificado", running: "Em curso", success: "Íntegro", failed: "Com erros", stopped: "Interrompido"}[area.status] || area.status;
-      for (const value of [area.kind === "l2_sha256" ? `Arquivos L2 → ${area.destination}` : `${area.source} → ${area.destination}`, {size: "Tamanho", l2_sha256: "SHA-256 L2", sha256: "SHA-256 integral"}[area.kind] || area.kind, area.status === "success" && area.kind === "size" ? "Tamanhos iguais" : statusLabel, area.errors]) {
+      for (const value of [["l1_sha256", "l2_sha256"].includes(area.kind) ? `Arquivos ${area.kind === "l1_sha256" ? "L1" : "L2"} → ${area.destination}` : `${area.source} → ${area.destination}`, {size: "Tamanho", l1_sha256: "SHA-256 L1", l2_sha256: "SHA-256 L2", sha256: "SHA-256 integral"}[area.kind] || area.kind, area.status === "success" && area.kind === "size" ? "Tamanhos iguais" : statusLabel, area.errors]) {
         const cell = document.createElement("td"); cell.textContent = value; row.append(cell);
       }
       body.append(row);
@@ -365,12 +374,14 @@ function confirmOperation(mode) {
       : mode === "destination_shutdown"
         ? "A app vai sincronizar e desmontar o destino. Só desligará a tomada depois de confirmar o fecho seguro. Fecha primeiro os ficheiros e aplicações que estejam a usar o destino."
         : mode === "recover"
-          ? "A app vai verificar o trabalho anterior e tentar concluir o fecho seguro do disco."
+          ? current.state.backup_kind === "l1" && current.state.destination_owned === false
+            ? "A app vai confirmar o fim do L1 anterior. Não cria outro backup nem liga o destino L3."
+            : "A app vai verificar o trabalho anterior e tentar concluir o fecho seguro do disco."
           : current.mode === "test"
             ? "A execução usará a área de teste separada e não aplicará retenção. Vai ligar o destino e criar ou verificar cópias reais."
             : mode === "checksum"
               ? "Escolhe todas as áreas ou apenas uma. A app verifica os ficheiros dessa seleção, liga e fecha o destino em segurança. Pode demorar várias horas. Não cria uma nova cópia."
-              : "A app vai criar o L2, copiar os dados para L3 e fechar o disco em segurança. A política de retenção configurada será aplicada.";
+              : "A app vai executar o L1 quando ativado, criar o L2, copiar os dados para L3 e fechar o disco em segurança. A política de retenção configurada será aplicada.";
   $("accept-confirm").disabled = !operationAvailable(mode);
   $("confirm").showModal();
 }

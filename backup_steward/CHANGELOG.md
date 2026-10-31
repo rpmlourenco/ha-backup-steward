@@ -1,3 +1,12 @@
+# 0.1.17 — Integrate native L1 into the Steward cycle
+
+- Optionally run L1 before L2/L3 under the same app schedule and operation lock. Reuse native HA backup contents, destinations, encryption and retention without reading private storage files or changing those settings.
+- Require the native HA schedule to be disabled before enabling L1. Wait for existing native work before a backup, correlate L1 by its exact Supervisor job/archive reference and await native destination delivery.
+- Preserve native local/cloud copies. Deliver the encrypted L1 archive into its own NASRUI directory with independent retention, then include it in the L3 mirror and archive SHA-256 checks.
+- Keep L1 disabled on upgrade until explicitly enabled. Production retains three NASRUI L1 copies by default; test mode isolates L1 copies and skips retention.
+- Persist native L1 uncertainty before creation. Cancellation waits for native completion; restart recovery confirms the original L1 without creating another backup or operating a destination that was never powered on.
+- Add L1 to the backup summary, startup/event logs and a new HA sensor. Preserve existing entities and keep the backup summary independent of later verification/manual disk operations.
+
 # 0.1.16 — Predictable scheduling and visible verification progress
 
 - Enabling or rescheduling the app agenda arms the next future occurrence, rather than starting an overdue backup immediately. Persist that boundary across app restarts; ordinary settings edits do not postpone it.

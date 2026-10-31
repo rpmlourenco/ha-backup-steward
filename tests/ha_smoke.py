@@ -22,7 +22,7 @@ async def main():
     destination_requests = []
     cancel_requests = []
     data = {
-        "version": "0.1.16",
+        "version": "0.1.17",
         "busy": False,
         "mode": "test",
         "schedule_enabled": False,
@@ -31,6 +31,7 @@ async def main():
             "instance_id": "fixture-instance",
             "state": "idle",
             "stage": "idle",
+            "l1": "delivered",
             "needs_cleanup": False,
         },
     }
@@ -144,9 +145,11 @@ async def main():
                     raise AssertionError("Backup mode accepted verification-only scope")
                 assert len(requests) == 2, requests
                 states = hass.states.async_all()
-                assert len([s for s in states if s.entity_id.startswith("sensor.")]) >= 8
+                assert len([s for s in states if s.entity_id.startswith("sensor.")]) == 9
                 assert len([s for s in states if s.entity_id.startswith("button.")]) == 8
                 registry = entity_registry.async_get(hass)
+                l1_entity = registry.async_get_entity_id("sensor", "backup_steward", "fixture-instance_l1")
+                assert hass.states.get(l1_entity).state == "delivered"
                 recovery_entity = registry.async_get_entity_id(
                     "binary_sensor", "backup_steward", "fixture-instance_needs_cleanup"
                 )
@@ -223,7 +226,7 @@ async def main():
                 assert await hass.config_entries.async_unload(entry.entry_id)
                 assert not hass.services.has_service("backup_steward", "run")
                 print(
-                    "HA smoke passed: config flow, authenticated polling, 19 entities, manual backup/disk controls and unload"
+                    "HA smoke passed: config flow, authenticated polling, 20 entities, manual backup/disk controls and unload"
                 )
             finally:
                 await hass.async_stop(force=True)

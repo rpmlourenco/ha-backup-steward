@@ -7,6 +7,7 @@ from .entity import StewardEntity
 SENSORS = (
     ("state", "Status", "mdi:shield-check-outline", False),
     ("stage", "Current stage", "mdi:progress-check", False),
+    ("l1", "L1 result", "mdi:backup-restore", False),
     ("l2", "L2 result", "mdi:archive-check-outline", False),
     ("l3", "L3 result", "mdi:harddisk", False),
     ("retention", "L2 retention", "mdi:archive-clock-outline", False),

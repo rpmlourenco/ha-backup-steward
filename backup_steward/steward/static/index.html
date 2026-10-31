@@ -144,23 +144,26 @@
             <span id="run-id" class="muted"></span>
           </div>
           <div class="steps">
+            <div data-step="l1">
+              <span>01</span><strong>Backup L1</strong><small>Nativo e cópia no NASRUI</small><em id="l1-state">A aguardar</em>
+            </div>
             <div data-step="l2">
-              <span>01</span><strong>Backup L2</strong
+              <span>02</span><strong>Backup L2</strong
               ><small>Apps e configuração</small
               ><em id="l2-state">A aguardar</em>
             </div>
             <div data-step="l3">
-              <span>02</span><strong>Cópia L3</strong
+              <span>03</span><strong>Cópia L3</strong
               ><small>Dados no disco offline</small
               ><em id="l3-state">A aguardar</em>
             </div>
             <div data-step="retention">
-              <span>03</span><strong>Retenção</strong
+              <span>04</span><strong>Retenção</strong
               ><small>Só as versões necessárias</small
               ><em id="retention-state">A aguardar</em>
             </div>
             <div data-step="cleanup">
-              <span>04</span><strong>Fecho seguro</strong
+              <span>05</span><strong>Fecho seguro</strong
               ><small>Desmontar e desligar</small
               ><em id="cleanup-state">A aguardar</em>
             </div>
@@ -223,6 +226,8 @@
         </fieldset>
         <fieldset>
           <legend>A tua agenda</legend>
+          <label class="check"><input type="checkbox" name="l1_enabled" />Executar L1 nativo antes do L2/L3</label>
+          <p class="help">O L1 mantém a seleção, destinos, chave e retenção configurados no HA. Para o ativar aqui, desativa apenas a agenda em Definições → Sistema → Backups. A cópia adicional no NASRUI segue também para L3.</p>
           <label class="check"
             ><input type="checkbox" name="schedule_enabled" />Executar
             diariamente</label
@@ -298,6 +303,7 @@
           <legend>Versões e encriptação</legend>
           <div class="form-grid">
             <label
+              >Cópias L1 no NASRUI a conservar<input type="number" name="l1_keep" min="1" max="365" /></label><label
               >Backups L2 a conservar<input
                 type="number"
                 min="1"
@@ -314,7 +320,7 @@
             /></label>
           </div>
           <label
-            >Chave de encriptação<input
+            >Chave de encriptação L2<input
               name="encryption_password"
               type="password"
               autocomplete="new-password"
@@ -332,6 +338,7 @@
           <div class="form-grid">
             <label>Pasta L2<input name="l2_directory" required /></label
             ><label
+              >Pasta L1 no NASRUI<input name="l1_directory" required /></label><label
               >Pasta de teste<input name="test_directory" required /></label
             ><label
               >Espaço livre mínimo (GiB)<input

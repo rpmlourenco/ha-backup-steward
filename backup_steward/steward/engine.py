@@ -127,6 +127,14 @@ class Engine:
                     restore_checksum=checksum if mode == "restore" else None,
                     execution_mode=cfg["execution_mode"],
                     events=[],
+                    l1="pending" if is_backup and cfg["l1_enabled"] else "skipped",
+                    l1_retention="pending" if is_backup and cfg["l1_enabled"] else "not_applicable",
+                    l1_removed=None,
+                    l1_slug=None,
+                    l1_file=None,
+                    l1_sha256=None,
+                    backup_kind="l2",
+                    destination_owned=False,
                     l2="pending" if is_backup else "skipped",
                     l3="pending",
                     retention="pending" if is_backup else "not_applicable",
@@ -149,6 +157,9 @@ class Engine:
                     )
                 control.checkpoint()
                 state.event("preflight", "A validar permissões, ausência de concorrência, discos e journal")
+                if is_backup:
+                    state.event("native_wait", "A aguardar disponibilidade do gestor nativo de backups")
+                    await control.interruptible(self.api.wait_native_idle(cfg["backup_timeout_minutes"]))
                 await self.api.preflight(cfg)
                 await host.acquire()
                 await disks.validate_source()
@@ -158,9 +169,20 @@ class Engine:
                 if scheduled_date:
                     state.update(last_schedule_date=scheduled_date)
                 control.checkpoint()
+                if is_backup and cfg["l1_enabled"]:
+                    from .native_l1 import run as run_l1
+
+                    await run_l1(cfg, state, self.api, disks, control, run_id, test)
+                    control.checkpoint()
+                    await self.api.preflight(cfg)
+                    if (
+                        await self.api.core_state(cfg["power_entity"]) != "off"
+                        or await disks.mounted_on_host()
+                    ):
+                        raise RuntimeError("Destination changed during L1; refusing to interfere")
                 # Record ownership before the first side effect; recovery fails safe on uncertain outcomes.
                 cleanup_needed = True
-                state.update(needs_cleanup=True)
+                state.update(needs_cleanup=True, destination_owned=True)
                 state.event("power", "A ligar a tomada do destino")
                 await self.api.power(cfg["power_entity"], True)
                 state.event(
@@ -189,7 +211,7 @@ class Engine:
                 if is_backup:
                     state.event("l2_create", "A criar o L2 nativo, comprimido e encriptado")
                     name = f"HA Backup Steward L2 {run_id} {secrets.token_hex(4)}"
-                    state.update(backup_name=name)
+                    state.update(backup_name=name, backup_kind="l2", backup_job=None)
                     # Persist pending before POST: a lost HTTP response must not trigger unmount while HA is backing up.
                     backup_pending = True
                     state.update(backup_pending=True)
@@ -291,7 +313,7 @@ class Engine:
                 state.update(
                     state="interrupted",
                     stage="recovery_required",
-                    needs_cleanup=cleanup_needed,
+                    needs_cleanup=cleanup_needed or bool(state.data.get("backup_pending")),
                     error="App stopped during an execution; recovery must confirm native backup completion",
                 )
                 raise
@@ -300,6 +322,14 @@ class Engine:
                 if isinstance(error, JobFailed):
                     backup_pending = False
                     state.update(backup_pending=False)
+                    if not cleanup_needed:
+                        state.update(needs_cleanup=False)
+                if state.data.get("l1") in ("pending", "created") and str(
+                    state.data.get("stage", "")
+                ).startswith("l1_"):
+                    state.update(l1="failed")
+                if state.data.get("stage") == "l1_retention":
+                    state.update(l1_retention="failed")
                 # Only our already-sanitized application errors are exposed; never raw HTTP/process output.
                 detail = (
                     str(error)
@@ -325,6 +355,12 @@ class Engine:
                 await self.notify("Backup Steward failed. Inspect the stage and recovery status in the app.")
             finally:
                 control.accepting = False
+                backup_pending = bool(state.data.get("backup_pending"))
+                if backup_pending and not cleanup_needed:
+                    state.event(
+                        "recovery_required",
+                        "Estado do L1 por confirmar; novos backups bloqueados até recuperação",
+                    )
                 if cleanup_needed and backup_pending:
                     state.event(
                         "recovery_required",
@@ -399,11 +435,24 @@ class Engine:
                         raise RuntimeError("Native backup outcome is unknown; manual diagnosis required")
                     self.state.event("recovery_wait", f"A confirmar o fim do trabalho nativo {job}")
                     try:
-                        await self.api.wait_job(job, cfg["backup_timeout_minutes"])
+                        if self.state.data.get("backup_kind") == "l1":
+                            await self.api.finish_l1(job, cfg["backup_timeout_minutes"])
+                        else:
+                            await self.api.wait_job(job, cfg["backup_timeout_minutes"])
                     except JobFailed:
                         pass  # Terminal failure permits cleanup; the native backup is preserved.
                     self.state.update(backup_pending=False)
                 await self.api.preflight(cfg)
+                if (
+                    not manual
+                    and self.state.data.get("backup_kind") == "l1"
+                    and self.state.data.get("destination_owned") is False
+                ):
+                    self.state.update(needs_cleanup=False, state="interrupted", stage="recovered")
+                    self.state.remember_backup()
+                    await host.release()
+                    self.state.event("recovered", "L1 nativo terminado; o destino L3 não foi ligado")
+                    return
                 if not self.state.data.get("safe_to_power_off"):
                     self.state.event(
                         "recovery_shutdown",
