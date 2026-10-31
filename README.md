@@ -4,7 +4,7 @@
 
 Encrypted Home Assistant backups, verified offline copies, and safe disk shutdown — packaged as one app with a lightweight companion integration.
 
-> **Experimental 0.1.17.** Local automated tests and container builds are not HAOS hardware acceptance. Keep known-good backups and the existing `80-local-media.rules` source automount during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
+> **Experimental 0.1.18.** Local automated tests and container builds are not HAOS hardware acceptance. Keep known-good backups and the existing `80-local-media.rules` source automount during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
 
 ![Backup Steward interface](docs/images/overview.png)
 

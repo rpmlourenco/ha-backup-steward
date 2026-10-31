@@ -254,6 +254,7 @@ class Engine:
                     if not test:
                         try:
                             await disks.validate_source()
+                            state.event("l2_retention", "A aplicar a retenção dos arquivos L2 entregues")
                             removed = await asyncio.to_thread(prune_l2, directory, cfg["l2_keep"], slug)
                             state.update(retention="success", l2_removed=len(removed))
                         except Exception:
@@ -283,6 +284,7 @@ class Engine:
                     state.update(last_checksum=datetime.now(timezone.utc).isoformat())
                 if is_backup and not test:
                     await disks.validate_destination()
+                    state.event("history_retention", "A aplicar a retenção do histórico L3")
                     await asyncio.to_thread(copier.prune_history)
                 state.update(l3="success")
                 state.event("safe_remove", "A sincronizar, desmontar e confirmar o flush SCSI final")

@@ -42,7 +42,7 @@ actions = (
 
 def status(busy):
     return {
-        "version": "0.1.17",
+        "version": "0.1.18",
         "busy": busy,
         "can_cancel": busy,
         "mode": "production",
@@ -227,6 +227,56 @@ try:
         assert page.locator("#l2-state").inner_text() == "Sem dados"
         assert "Ainda sem resultados" in page.locator("#backup-summary").inner_text()
         assert page.locator("#last-success").inner_text() == "Ainda sem backup registado"
+        # Each live phase marks exactly the matching card; future steps still wait.
+        for stage, key in (
+            ("l1_create", "l1"),
+            ("l1_wait", "l1"),
+            ("l1_download", "l1"),
+            ("l2_create", "l2"),
+            ("l2_wait", "l2"),
+            ("l2_download", "l2"),
+            ("l3_copy", "l3"),
+            ("checksum_source", "l3"),
+            ("integrity_area_ok", "l3"),
+            ("l1_retention", "retention"),
+            ("l2_retention", "retention"),
+            ("history_retention", "retention"),
+            ("safe_remove", "cleanup"),
+            ("power_off", "cleanup"),
+        ):
+            value = status(True)
+            value["state"].update(
+                run_id="phase-" + stage,
+                stage=stage,
+                l1="delivered" if key != "l1" else "pending",
+                l2="pending",
+                l3="pending",
+                retention="pending",
+            )
+            if stage == "history_retention":
+                value["state"]["retention"] = "success"
+            response = hold_refresh()
+            response.fulfill(json=value)
+            page.wait_for_function(
+                "document.getElementById('run-id').textContent === " + repr("phase-" + stage)
+            )
+            assert page.locator("#" + key + "-state").inner_text() == "Em curso", stage
+            assert page.locator(".steps .active").count() == 1, stage
+            if key == "l2":
+                assert page.locator("#l1-state").inner_text() == "Concluído"
+                assert page.locator("#l3-state").inner_text() == "A aguardar"
+                assert page.locator("#retention-state").inner_text() == "A aguardar"
+                assert page.locator("#cleanup-state").inner_text() == "A aguardar"
+        # Cleanup after a failed run remains visible without showing an older backup.
+        value["state"].update(state="failed", stage="cleanup_after_failure", run_id="failed-cleanup")
+        response = hold_refresh()
+        response.fulfill(json=value)
+        page.wait_for_function("document.getElementById('run-id').textContent==='failed-cleanup'")
+        assert page.locator("#cleanup-state").inner_text() == "Em curso"
+        response = hold_refresh()
+        response.fulfill(json=status(False))
+        page.wait_for_function("!document.getElementById('run').disabled")
+        assert page.locator(".steps .active").count() == 0
         # Editing the weekday is saveable while idle, with a reason when locked.
         options = json.loads((root.parents[1] / "config.json").read_text(encoding="utf-8"))["options"]
         page.route("**/v1/config", lambda r: r.fulfill(json=options))

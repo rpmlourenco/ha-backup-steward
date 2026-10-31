@@ -22,7 +22,7 @@ async def main():
     destination_requests = []
     cancel_requests = []
     data = {
-        "version": "0.1.17",
+        "version": "0.1.18",
         "busy": False,
         "mode": "test",
         "schedule_enabled": False,

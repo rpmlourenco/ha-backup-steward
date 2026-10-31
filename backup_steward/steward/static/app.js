@@ -54,6 +54,16 @@ const operationLabels = {
   destination_mount: "Ligar e montar o destino",
   destination_shutdown: "Desmontar e desligar o destino",
 };
+function activeBackupStep(state) {
+  const stage = state.stage || "";
+  if (["l1_retention", "l2_retention", "history_retention"].includes(stage)) return "retention";
+  if (["safe_remove", "power_off", "recovery_shutdown", "cleanup_after_failure", "cancel_cleanup"].includes(stage)) return "cleanup";
+  if (stage === "recovery_wait") return state.backup_kind === "l1" ? "l1" : "l2";
+  if (stage.startsWith("l1_") && stage !== "l1_delivered") return "l1";
+  if (stage.startsWith("l2_") && stage !== "l2_archive_checksum") return "l2";
+  if (stage.startsWith("l3_") || stage.startsWith("checksum") || stage.startsWith("integrity_") || ["archive_checksum", "l2_archive_checksum"].includes(stage)) return "l3";
+  return null;
+}
 function stamp(value) {
   return value
     ? new Intl.DateTimeFormat("pt-PT", {
@@ -242,8 +252,9 @@ function render() {
     ? `Último: ${stamp(s.last_checksum)}`
     : "Ainda sem verificação completa de todas as origens";
   const backupModes = ["backup", "backup_only", "backup_checksum"];
-  const currentBackup = current.busy && s.state === "running" && backupModes.includes(s.mode) && !manual;
+  const currentBackup = current.busy && ["running", "recovering", "failed", "cancelled", "interrupted"].includes(s.state) && backupModes.includes(s.mode) && !s.destination_manual;
   const backup = currentBackup ? s : s.last_backup;
+  const activeStep = currentBackup ? activeBackupStep(s) : null;
   $("backup-summary").textContent = !backup
     ? "Ainda sem resultados de backup guardados."
     : current.busy && currentBackup
@@ -252,18 +263,22 @@ function render() {
   $("run-id").textContent = backup?.run_id || "";
   for (const key of ["l1", "l2", "l3", "retention"]) {
     const val = backup?.[key];
-    $(`${key}-state`).textContent = !backup ? "Sem dados" :
+    const complete = ["delivered", "success"].includes(val);
+    const active = activeStep === key && (!complete || key === "retention");
+    document.querySelector(`[data-step="${key}"]`).classList.toggle("active", active);
+    $(`${key}-state`).textContent = !backup ? "Sem dados" : active ? "Em curso" :
       key === "retention" && val === "success" ? "Aplicada" :
       ["l1", "l2"].includes(key) && val === "delivered" ? "Concluído" :
       key === "l3" && val === "success" ? "Concluída" : phases[val] || (key === "l1" ? "Não incluído" : "A aguardar");
     document.querySelector(`[data-step="${key}"]`).classList.toggle(
-      "complete", ["delivered", "success"].includes(val));
+      "complete", complete && !active);
   }
   const closed = backup && !backup.needs_cleanup && backup.safe_to_power_off;
   $("cleanup-state").textContent = !backup ? "Sem dados" : closed
-    ? "Disco desligado" : backup.needs_cleanup ? "Por confirmar"
+    ? "Disco desligado" : activeStep === "cleanup" ? "Em curso" : currentBackup ? "A aguardar" : backup.needs_cleanup ? "Por confirmar"
     : backup.state === "cancelled" ? "Não utilizado" : "A aguardar";
   document.querySelector('[data-step="cleanup"]').classList.toggle("complete", !!closed);
+  document.querySelector('[data-step="cleanup"]').classList.toggle("active", activeStep === "cleanup" && !closed);
   $("retention-note").textContent =
     `${current.l1_enabled ? `Conserva ${current.l1_keep} cópias L1 no NASRUI e ` : "Conserva "}${current.daily_retention_days} backups L2. Com uma cópia diária, isso representa cerca de ${current.daily_retention_days} dias de recuperação. O histórico L3 tem uma retenção própria.`;
   const integrity = s.integrity;

@@ -365,6 +365,10 @@ h2 {
   border-radius: 5px;
   background: var(--bg);
 }
+.steps .active em {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
 .steps .complete em {
   color: var(--green);
   background: #e7f7f0;

@@ -1,3 +1,10 @@
+# 0.1.18 — Show the active backup step
+
+- Show “Em curso” on the current L1, L2, L3, retention or safe-shutdown card; future steps remain “A aguardar” and completed steps retain their results.
+- Mark archive and L3 history retention explicitly while their workers run. Do not infer active shutdown merely because the destination is mounted.
+- Keep the current backup visible during failure/cancellation cleanup and clear active styling when showing historical results.
+- Add browser regressions for phase transitions and a worker-stage regression for retention. Backup contents, scheduling and disk behaviour are unchanged.
+
 # 0.1.17 — Integrate native L1 into the Steward cycle
 
 - Optionally run L1 before L2/L3 under the same app schedule and operation lock. Reuse native HA backup contents, destinations, encryption and retention without reading private storage files or changing those settings.

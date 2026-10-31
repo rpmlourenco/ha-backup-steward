@@ -50,6 +50,21 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         with patch("steward.engine.shutil.disk_usage", return_value=Mock(free=1000 * 1024**3)):
             await self.engine.run(mode)
 
+    async def test_retention_reports_active_stage_while_each_worker_runs(self):
+        self.cfg["execution_mode"] = "production"
+
+        def l2_retention(*args):
+            self.assertEqual(self.state.data["stage"], "l2_retention")
+            return []
+
+        def history_retention():
+            self.assertEqual(self.state.data["stage"], "history_retention")
+
+        self.copier.prune_history.side_effect = history_retention
+        with patch("steward.engine.prune_l2", side_effect=l2_retention):
+            await self.run_engine("backup_only")
+        self.assertEqual(self.state.data["state"], "success")
+
     async def test_backup_only_skips_overdue_full_checksum_but_keeps_copy_checks(self):
         self.engine.cfg["execution_mode"] = "production"
         with (
