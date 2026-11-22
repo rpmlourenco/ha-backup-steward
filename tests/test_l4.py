@@ -253,6 +253,29 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored.status()["connection"], "interrupted")
         self.assertFalse(restored.status()["testing"])
 
+    async def test_legacy_success_has_a_fixed_end_and_connection_tests_preserve_it(self):
+        saved = {
+            "status": "success",
+            "started_at": "2026-11-22T12:00:00+00:00",
+            "last_success": "2026-11-22T12:30:00+00:00",
+            "message": "Ligação confirmada.",
+            "bytes": 1234,
+        }
+        self.engine.state.update(l4=saved)
+        restored = Mirror(self.engine)
+        self.assertEqual(restored.status()["finished_at"], saved["last_success"])
+        self.assertEqual(restored.status()["phase"], "complete")
+        before = dict(self.engine.state.data["l4"])
+        with patch.object(restored, "probe", new=AsyncMock()):
+            await restored.test()
+        for key, value in before.items():
+            self.assertEqual(restored.status()[key], value, key)
+        with patch.object(restored, "probe", new=AsyncMock(side_effect=ValueError("Teste falhou."))):
+            with self.assertRaises(ValueError):
+                await restored.test()
+        for key, value in before.items():
+            self.assertEqual(restored.status()[key], value, key)
+
     async def test_disable_during_transfer_cancels_and_preserves_remote_and_local_results(self):
         self.engine.cfg.update(
             execution_mode="production",

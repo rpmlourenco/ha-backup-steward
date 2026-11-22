@@ -246,6 +246,34 @@ try:
         page.evaluate("window.testPollers[1]()")
         page.wait_for_function("document.getElementById('l4-stage').textContent.includes('comparar')")
         assert page.locator("#l4-bar").get_attribute("value") is None
+        # Old completed runs have no phase or finished_at; a later connection
+        # test must not turn their progress or elapsed time into a live timer.
+        local["busy"] = False
+        transfer_state.clear()
+        transfer_state.update(
+            busy=False, status="success", started_at="2026-11-22T12:00:00+00:00",
+            last_success="2026-11-22T12:30:00+00:00", percent=99,
+            message="Ligação, chaves e destino confirmados. Nenhum ficheiro foi enviado.",
+        )
+        page.evaluate("window.testPollers[0]()")
+        page.wait_for_function("!statusRequestPending")
+        page.evaluate("window.testPollers[1]()")
+        page.wait_for_function("document.getElementById('l4-stage').textContent === 'Espelho concluído'")
+        assert page.locator("#l4-bar").get_attribute("value") == "100"
+        assert page.locator("#l4-elapsed").inner_text() == "0h 30m 0s"
+        assert page.locator("#l4-source-count").inner_text() == ""
+        assert page.locator("#l4-summary").inner_text() == "Espelho atualizado."
+        assert page.locator(".mirror-card").evaluate("el => getComputedStyle(el).borderTopWidth") == "1px"
+        page.wait_for_timeout(1100)
+        page.evaluate("window.testPollers[1]()")
+        assert page.locator("#l4-elapsed").inner_text() == "0h 30m 0s"
+        for result in ("failed", "interrupted"):
+            transfer_state.update(status=result, phase="planning")
+            page.evaluate("window.testPollers[1]()")
+            label = "Sincronização falhou" if result == "failed" else "Sincronização interrompida"
+            page.wait_for_function("label => document.getElementById('l4-stage').textContent === label", arg=label)
+            assert page.locator("#l4-bar").get_attribute("value") == "99"
+            assert page.locator("#l4-elapsed").inner_text() == "—"
         offline = True
         page.evaluate("window.testPollers.forEach(fn=>fn())")
         page.wait_for_function("document.getElementById('l4-settings').disabled")

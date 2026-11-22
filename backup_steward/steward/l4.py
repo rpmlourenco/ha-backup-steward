@@ -180,6 +180,12 @@ class Mirror:
         self.progress_log_at = 0
         self.parser = Progress()
         saved = engine.state.data.get("l4", {})
+        if saved.get("status") == "success" and not saved.get("finished_at"):
+            self.update(
+                phase="complete",
+                finished_at=saved.get("last_success"),
+                message="Espelho atualizado.",
+            )
         if saved.get("connection") == "testing":
             self.update(
                 connection="interrupted",
@@ -198,7 +204,8 @@ class Mirror:
         return bool(self.task and not self.task.done()) or self.probing
 
     def update(self, **values):
-        values["updated_at"] = now()
+        if not set(values) <= {"connection", "tested_at", "connection_message"}:
+            values["updated_at"] = now()
         data = dict(self.engine.state.data.get("l4", {}), **values)
         self.engine.state.update(l4=data)
 
@@ -292,7 +299,6 @@ class Mirror:
                 connection="success",
                 tested_at=now(),
                 connection_message="Ligação, chaves e destino confirmados. Nenhum ficheiro foi enviado.",
-                message="Ligação, chaves e destino confirmados. Nenhum ficheiro foi enviado.",
             )
         except asyncio.CancelledError:
             self.update(
@@ -307,7 +313,6 @@ class Mirror:
                 connection_message=str(error)
                 if isinstance(error, ValueError)
                 else "Não foi possível validar a ligação. Confirma o endereço, porta e chaves.",
-                message="Não foi possível validar a ligação. Confirma o endereço, porta e chaves.",
             )
             raise
         finally:

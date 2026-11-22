@@ -1,3 +1,9 @@
+## 0.2.4
+
+- Remove the blue top border from the remote-mirror card.
+- Stop progress animation and elapsed timers for completed, failed and interrupted runs, including older saved runs.
+- Keep connection-test messages and timestamps separate from transfer results.
+
 ## 0.2.3
 
 - Remove the experimental label from app metadata and current documentation.

@@ -7,18 +7,22 @@
   const formatTime = value => value ? new Date(value).toLocaleString("pt-PT",{timeZone:local.timezone}) : "—";
   function renderTransfer() {
     el("transfer").hidden = !status.started_at;
+    const active = status.busy && !status.testing && status.status === "running";
+    const terminal = {success:"complete", failed:"failed", interrupted:"interrupted"};
+    const phase = terminal[status.status] || status.phase;
     const phases = {preflight:"A validar as origens", planning:"A comparar alterações", transferring:"A enviar dados", verifying:"A confirmar o recetor", complete:"Espelho concluído", failed:"Sincronização falhou", interrupted:"Sincronização interrompida"};
-    el("stage").textContent = `${phases[status.phase] || status.message || "A aguardar"}${status.source ? " · " + status.source : ""}`;
-    el("source-count").textContent = `${status.completed_sources || 0}/${status.sources_total || policy.sources.length} origens concluídas${status.source_index ? " · atual " + status.source_index : ""}`;
-    if (status.phase === "transferring" && Number.isFinite(status.percent)) el("bar").value = status.percent;
-    else if (status.phase === "complete") el("bar").value = 100;
+    el("stage").textContent = `${phases[phase] || "A aguardar"}${status.source ? " · " + status.source : ""}`;
+    el("source-count").textContent = Number.isFinite(status.completed_sources) && Number.isFinite(status.sources_total) ? `${status.completed_sources}/${status.sources_total} origens concluídas${active && status.source_index ? " · atual " + status.source_index : ""}` : "";
+    if (phase === "complete") el("bar").value = 100;
+    else if (!active || (phase === "transferring" && Number.isFinite(status.percent))) el("bar").value = status.percent ?? 0;
     else el("bar").removeAttribute("value");
     el("bytes").textContent = formatBytes(status.bytes);
     el("files").textContent = status.files_transferred ?? "—";
     el("speed").textContent = status.speed || "—";
-    el("eta").textContent = status.phase === "transferring" ? status.eta || "A calcular" : "—";
-    const elapsed = status.started_at ? Math.max(0,Math.floor(((status.finished_at ? new Date(status.finished_at).getTime() : Date.now())-new Date(status.started_at).getTime())/1000)) : 0;
-    el("elapsed").textContent = `${Math.floor(elapsed/3600)}h ${Math.floor(elapsed%3600/60)}m ${elapsed%60}s`;
+    el("eta").textContent = active && phase === "transferring" ? status.eta || "A calcular" : "—";
+    const end = active ? Date.now() : new Date(status.finished_at || (status.status === "success" ? status.last_success : null) || "").getTime();
+    const elapsed = Math.max(0,Math.floor((end-new Date(status.started_at).getTime())/1000));
+    el("elapsed").textContent = Number.isFinite(elapsed) ? `${Math.floor(elapsed/3600)}h ${Math.floor(elapsed%3600/60)}m ${elapsed%60}s` : "—";
     el("updated").textContent = formatTime(status.updated_at);
     const events = Array.isArray(status.events) ? status.events.slice(-40) : [];
     el("log-panel").hidden = !events.length;
@@ -46,7 +50,7 @@
     el("destination").textContent = policy.host ? `${policy.label} · ${policy.host}:${policy.port}` : "Por configurar";
     el("last").textContent = status.last_success ? new Date(status.last_success).toLocaleString("pt-PT", {timeZone:local.timezone}) : "Ainda sem envios";
     el("progress").textContent = status.busy && status.speed ? `${status.source || ""} · ${status.percent || 0}% · ${status.speed}` : "—";
-    el("summary").textContent = !policy.enabled ? "L4 desativado. A cópia remota existente mantém-se." : status.message || "Espelho ativo. Testa a ligação antes do primeiro envio.";
+    el("summary").textContent = !policy.enabled ? "L4 desativado. A cópia remota existente mantém-se." : status.status === "success" ? "Espelho atualizado." : status.message || "Espelho ativo. Testa a ligação antes do primeiro envio.";
     renderTransfer();
     const connection = testing ? "testing" : localTestError ? "failed" : status.connection;
     const connectionLabels = {testing:"A testar ligação", success:"Ligação confirmada", failed:"Teste falhou", interrupted:"Teste interrompido"};

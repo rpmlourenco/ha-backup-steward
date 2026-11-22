@@ -137,3 +137,13 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
 - Both apps build for amd64 and aarch64; Ruff and Git whitespace checks pass.
 - No live HA access, configuration changes, restarts or backup operations were
   performed. Updates must be installed manually after the current transfer ends.
+
+## 0.2.4 — stopped L4 state and legacy results
+
+- 200 isolated unit tests pass. Connection tests preserve transfer results,
+  messages and timestamps; legacy successes recover their end from last_success.
+- Chrome L4 acceptance covers old completed runs without a phase/end timestamp,
+  a fixed elapsed duration, a static completed bar, failed/interrupted states
+  without animation, omitted unknown source counts and the normal card border.
+- ARM64 build, Ruff, Git whitespace checks and the official isolated Home
+  Assistant 2026.10.3 smoke pass. No live HA operation was performed.
