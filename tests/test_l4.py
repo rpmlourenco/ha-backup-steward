@@ -193,6 +193,19 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.engine.state.data["l4"]["connection"], "success")
         self.assertIsNone(self.engine.state.data.get("last_success"))
 
+    async def test_progress_parses_before_throttling_and_flushes_final_counts(self):
+        mirror = self.engine.mirror
+        mirror.update(source="photos", run_id="fixture")
+        mirror.progress("\r 1,000 10% 1.00MB/s 0:00:09 (xfr#1, to-chk=9/10)\r")
+        mirror.progress(" 2,000 20% 1.00MB/s 0:00:08 (xfr#2, to-chk=8/10)\r")
+        self.assertEqual(mirror.parser.last["bytes"], 2000)
+        mirror.publish_progress(force=True)
+        self.assertEqual(mirror.status()["bytes"], 2000)
+        self.assertEqual(mirror.status()["files_transferred"], 2)
+        for i in range(50):
+            mirror.event("planning", f"Etapa {i}")
+        self.assertEqual(len(mirror.status()["events"]), 40)
+
     async def test_connection_progress_and_result_are_visible_with_l4_disabled(self):
         mirror = self.engine.mirror
         self.engine.cfg["l4"]["enabled"] = False

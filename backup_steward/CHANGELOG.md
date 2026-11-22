@@ -1,3 +1,10 @@
+## 0.2.2
+
+- Separate the destination-disk and remote-mirror cards with consistent spacing on desktop and mobile.
+- Show L4 stages, source counts, logical rsync bytes, transferred files, rate, ETA and elapsed time.
+- Parse split/carriage-return progress records before throttling and flush the final snapshot.
+- Add bounded dated L4 activity in the UI and timestamped console stage/periodic progress logs.
+
 ## 0.2.1
 
 - Show persistent connection test progress, success and failure even while L4 is disabled.

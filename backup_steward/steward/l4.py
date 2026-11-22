@@ -5,11 +5,14 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from .state import atomic_json
 from .storage import filesystem_call
+from .l4_progress import Progress
+from . import telemetry
 
 
 def now():
@@ -23,6 +26,7 @@ async def execute(args, timeout=60, progress=None):
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         start_new_session=True,
+        env=dict(os.environ, LC_ALL="C"),
     )
     output, errors = bytearray(), bytearray()
 
@@ -160,7 +164,7 @@ def rsync_args(cfg, directory, item, dry=False):
     if dry:
         args += ["--dry-run", "--itemize-changes", "--out-format=%i|%l"]
     else:
-        args += ["--info=progress2", "--out-format=", "--stats"]
+        args += ["--info=progress2", "--outbuf=L", "--out-format=", "--stats"]
     host = f"[{cfg['host']}]" if ":" in cfg["host"] else cfg["host"]
     return args + [item["source"] + "/", f"mirror_{item['name']}@{host}:./"]
 
@@ -173,6 +177,8 @@ class Mirror:
         self.probing = False
         self.testing = False
         self.progress_at = 0
+        self.progress_log_at = 0
+        self.parser = Progress()
         saved = engine.state.data.get("l4", {})
         if saved.get("connection") == "testing":
             self.update(
@@ -181,7 +187,10 @@ class Mirror:
             )
         if saved.get("status") in ("running", "testing"):
             self.update(
-                status="interrupted", message="Ligação interrompida; repete para reconciliar o espelho."
+                status="interrupted",
+                phase="interrupted",
+                finished_at=now(),
+                message="Ligação interrompida; repete para reconciliar o espelho.",
             )
 
     @property
@@ -189,8 +198,16 @@ class Mirror:
         return bool(self.task and not self.task.done()) or self.probing
 
     def update(self, **values):
+        values["updated_at"] = now()
         data = dict(self.engine.state.data.get("l4", {}), **values)
         self.engine.state.update(l4=data)
+
+    def event(self, stage, message, level=20):
+        message = telemetry.process_text(message)
+        data = self.engine.state.data.get("l4", {})
+        events = data.get("events", [])[-39:] + [{"time": now(), "stage": stage, "message": message}]
+        self.update(stage=stage, message=message, events=events)
+        telemetry.event("L4: " + message, data.get("run_id"), level)
 
     def status(self):
         return dict(
@@ -322,16 +339,26 @@ class Mirror:
             previous = self.engine.state.data.get("l4", {}).get("counts", {})
             self.update(
                 status="running",
+                run_id="l4-" + secrets.token_hex(4),
                 started_at=now(),
+                finished_at=None,
+                events=[],
+                sources_total=len(cfg["sources"]),
+                completed_sources=0,
+                source_index=0,
+                phase="preflight",
                 source=None,
                 bytes=0,
                 message="A validar as origens e o recetor.",
                 results=[],
                 schedule_date=scheduled_date or self.engine.state.data.get("l4", {}).get("schedule_date"),
             )
+            self.event("preflight", "Sincronização iniciada; a validar as origens e o recetor.")
             try:
                 counts = {}
                 for item in cfg["sources"]:
+                    self.update(source=item["name"])
+                    self.event("preflight", f"A validar a origem {item['name']}.")
                     root = await source_identity(item)
                     count = await filesystem_call(count_files, root)
                     old = previous.get(item["source"], 0)
@@ -343,13 +370,28 @@ class Mirror:
                         )
                     counts[item["source"]] = count
                     await self.probe(cfg, item)
-                for item in cfg["sources"]:
+                for index, item in enumerate(cfg["sources"], 1):
+                    self.parser = Progress()
+                    self.progress_at = 0
+                    self.progress_log_at = asyncio.get_running_loop().time()
                     self.update(
                         source=item["name"],
+                        source_index=index,
+                        phase="planning",
+                        planned_bytes=None,
+                        planned_files=None,
+                        eta=None,
+                        files_transferred=None,
+                        files_remaining=None,
+                        files_total=None,
                         percent=0,
                         bytes=0,
                         speed=None,
                         message="A comparar alterações antes do envio.",
+                    )
+                    self.event(
+                        "planning",
+                        f"Origem {index}/{len(cfg['sources'])}: {item['name']}; a comparar alterações.",
                     )
                     # Streaming plan counts prevent large trees from truncating deletion guards.
                     plan = Plan()
@@ -359,6 +401,11 @@ class Mirror:
                         plan.feed,
                     )
                     plan.finish()
+                    self.update(planned_bytes=plan.bytes, planned_files=plan.files)
+                    self.event(
+                        "planned",
+                        f"{item['name']}: plano concluído; {plan.files} ficheiros, {plan.bytes} bytes a atualizar; {plan.deletes} eliminações previstas.",
+                    )
                     if plan.deletes > cfg["max_delete_files"]:
                         raise ValueError(
                             "O espelho excede o limite de eliminações. Nenhum envio foi iniciado nesta origem."
@@ -367,26 +414,47 @@ class Mirror:
                     if remote["free_bytes"] - plan.bytes < cfg["min_free_gib"] * 1024**3:
                         raise ValueError("O espaço livre previsto após a cópia fica abaixo do mínimo.")
                     self.update(
-                        message="A enviar alterações. Os ficheiros removidos serão eliminados no fim."
+                        phase="transferring",
+                        message="A enviar alterações. Os ficheiros removidos serão eliminados no fim.",
+                    )
+                    self.event(
+                        "transferring",
+                        f"A enviar {item['name']}; integridade da transferência validada pelo rsync.",
                     )
                     await source_identity(item)
                     await execute(
                         rsync_args(cfg, self.directory, item), cfg["timeout_minutes"] * 60, self.progress
                     )
+                    self.parser.finish()
+                    self.publish_progress(force=True)
+                    self.update(phase="verifying")
+                    self.event("verifying", f"{item['name']}: envio terminado; a confirmar o recetor.")
                     await self.probe(cfg, item)
                     results.append({"name": item["name"], "status": "success"})
-                    self.update(results=results)
+                    self.update(results=results, completed_sources=len(results))
+                    self.event(
+                        "source_complete",
+                        f"Origem {item['name']} concluída ({len(results)}/{len(cfg['sources'])}).",
+                    )
                 self.update(
                     status="success",
+                    phase="complete",
+                    finished_at=now(),
                     last_success=now(),
                     counts=counts,
                     source=None,
                     message="Espelho atualizado.",
                 )
+                self.event("complete", "Espelho atualizado; todas as origens concluídas.")
             except asyncio.CancelledError:
                 self.update(
                     status="interrupted",
+                    phase="interrupted",
+                    finished_at=now(),
                     message="Envio interrompido. Os ficheiros já recebidos permanecem no destino.",
+                )
+                self.event(
+                    "interrupted", "Envio interrompido; os ficheiros já recebidos permanecem no destino.", 30
                 )
                 raise
             except Exception as error:
@@ -395,18 +463,29 @@ class Mirror:
                     if isinstance(error, ValueError)
                     else "A sincronização falhou; verifica a configuração e o recetor."
                 )
-                self.update(status="failed", message=message, results=results)
+                self.update(
+                    status="failed", phase="failed", finished_at=now(), message=message, results=results
+                )
+                self.event("failed", message, 40)
                 await self.engine.notify("L4: " + message)
 
     def progress(self, text):
+        self.parser.feed(text)
+        self.publish_progress()
+
+    def publish_progress(self, force=False):
         loop = asyncio.get_running_loop()
-        if loop.time() - self.progress_at < 2:
+        if self.parser.last is None or (not force and loop.time() - self.progress_at < 2):
             return
-        matches = re.findall(r"([\d,]+)\s+(\d+)%\s+([\d.]+[kMGT]?B/s)", text)
-        if matches:
-            size, percent, speed = matches[-1]
-            self.progress_at = loop.time()
-            self.update(bytes=int(size.replace(",", "")), percent=int(percent), speed=speed)
+        self.progress_at = loop.time()
+        self.update(**self.parser.last)
+        if force or loop.time() - self.progress_log_at >= 60:
+            self.progress_log_at = loop.time()
+            metric = self.parser.last
+            self.event(
+                "transferring",
+                f"{self.engine.state.data['l4'].get('source')}: {metric['bytes']} bytes processados; {metric['percent']}%; ritmo rsync={metric['speed']}; ficheiros transferidos={metric['files_transferred']}; ETA={metric['eta'] or '—'}.",
+            )
 
     def due(self, instant):
         cfg = self.engine.cfg["l4"]
@@ -437,6 +516,7 @@ def count_files(root):
 class Plan:
     def __init__(self):
         self.buffer, self.deletes, self.bytes = "", 0, 0
+        self.files = 0
 
     def feed(self, chunk):
         self.buffer += chunk
@@ -448,7 +528,8 @@ class Plan:
             if line.startswith("*deleting"):
                 self.deletes += 1
             elif re.fullmatch(r"[<>ch.][^|]{10}\|\d+", line):
-                if not line.startswith(".d"):
+                if line[1] == "f" and line[0] in "<>c":
+                    self.files += 1
                     self.bytes += int(line.split("|")[1])
 
     def finish(self):

@@ -725,7 +725,14 @@ summary {
 .integrity-samples { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; padding-left: 18px; }
 
 /* Remote mirror setup shares the local app's colours and spacing. */
-.mirror-card { border-top: 3px solid var(--blue); }
+.mirror-card { margin-top: 20px; border-top: 3px solid var(--blue); }
+.mirror-transfer { padding: 18px; margin: 18px 0; border: 1px solid var(--line); border-radius: 14px; }
+.mirror-transfer progress { display: block; width: 100%; height: 12px; margin: 14px 0; accent-color: var(--blue); }
+.mirror-transfer .mirror-facts { margin-bottom: 10px; }
+.mirror-events { padding: 0; list-style: none; max-height: 310px; overflow-y: auto; }
+.mirror-events li { display: grid; grid-template-columns: minmax(140px,auto) 1fr; gap: 16px; border-bottom: 1px solid var(--line); padding: 10px 0; font-size: 12px; overflow-wrap: anywhere; }
+.mirror-events time { color: var(--muted); }
+@media(max-width:640px) { .mirror-events li { grid-template-columns: 1fr; gap: 5px; } }
 .mirror-connection { margin: 18px 0; padding: 12px 16px; border-left: 3px solid var(--blue); border-radius: 0 10px 10px 0; background: var(--bg); line-height: 1.65; overflow-wrap: anywhere; }
 .mirror-connection[data-state="success"] { border-left-color: var(--green); }
 .mirror-connection[data-state="failed"], .mirror-connection[data-state="interrupted"] { border-left-color: #e06b49; }

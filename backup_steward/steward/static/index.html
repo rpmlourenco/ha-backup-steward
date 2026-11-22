@@ -102,6 +102,13 @@
           <label class="mirror-switch"><input id="l4-enabled" role="switch" type="checkbox" disabled><span>Ativar L4</span></label></div>
           <p id="l4-connection" class="mirror-connection" role="status" aria-live="polite" aria-atomic="true" hidden></p>
           <div class="mirror-facts"><div><small>Destino</small><strong id="l4-destination">Por configurar</strong></div><div><small>Última sincronização</small><strong id="l4-last">Ainda sem envios</strong></div><div><small>Transferência</small><strong id="l4-progress">—</strong></div></div>
+          <div id="l4-transfer" class="mirror-transfer" hidden>
+            <div class="section-heading"><strong id="l4-stage"></strong><span id="l4-source-count" class="muted"></span></div>
+            <progress id="l4-bar" max="100" aria-label="Progresso da origem atual"></progress>
+            <div class="mirror-facts"><div><small>Bytes processados</small><strong id="l4-bytes">—</strong></div><div><small>Ficheiros transferidos</small><strong id="l4-files">—</strong></div><div><small>Ritmo rsync</small><strong id="l4-speed">—</strong></div><div><small>Estimativa restante</small><strong id="l4-eta">—</strong></div><div><small>Tempo decorrido</small><strong id="l4-elapsed">—</strong></div><div><small>Atualização</small><strong id="l4-updated">—</strong></div></div>
+            <p class="help">Progresso por origem. Os bytes e o ritmo correspondem ao processamento rsync, incluindo dados reutilizados; não medem o tráfego WAN. A estimativa pode mudar durante a listagem.</p>
+          </div>
+          <details id="l4-log-panel" hidden><summary>Atividade L4 · data e hora</summary><ol id="l4-events" class="mirror-events"></ol></details>
           <div class="hero-actions"><button id="l4-settings" class="secondary" disabled>Configurar espelho</button><button id="l4-test" class="secondary" disabled>Testar ligação</button><button id="l4-run" class="primary" disabled>Sincronizar agora</button><button id="l4-cancel" class="secondary" disabled hidden>Parar envio</button></div>
           <p class="help">Ligação direta por SSH. Os ficheiros alterados e apagados na origem refletem-se no destino. Desativar L4 conserva a cópia remota.</p>
         </section>

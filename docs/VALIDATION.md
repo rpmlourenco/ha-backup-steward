@@ -123,3 +123,17 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
   visibility and persistence after a page reload while L4 remains disabled.
 - AMD64/ARM64 builds and official isolated Home Assistant 2026.10.3 smoke pass.
 - No live HA connection, configuration edit, restart or transfer was performed.
+
+## 0.2.2 — L4 activity and progress
+
+- 199 isolated unit tests pass, including fragmented rsync progress records, final
+  counters, throttled publication and bounded activity history.
+- All three Chrome suites pass with fake endpoints. L4 checks cover transfer
+  counters, ETA, planning state, timestamped activity and a minimum 20 px gap
+  between the destination and mirror cards at desktop and mobile widths.
+- Real SSH/rsync container acceptance passes for copying, updates, deletions,
+  confinement and pinned authentication; only the filesystem UUID is mocked.
+- Official isolated Home Assistant 2026.10.3 smoke passes with 20 entities.
+- Both apps build for amd64 and aarch64; Ruff and Git whitespace checks pass.
+- No live HA access, configuration changes, restarts or backup operations were
+  performed. Updates must be installed manually after the current transfer ends.

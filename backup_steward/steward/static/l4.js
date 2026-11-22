@@ -3,6 +3,32 @@
   const el = id => document.getElementById(`l4-${id}`);
   let policy, status, local, ready = false, pending = false, testRequestPending = false, localTestError = null;
   const controls = ["enabled", "settings", "test", "run", "cancel", "save", "pair", "copy", "yes", "import-button"];
+  const formatBytes = value => Number.isFinite(value) ? `${new Intl.NumberFormat("pt-PT",{maximumFractionDigits:2}).format(value / 1024**3)} GiB` : "—";
+  const formatTime = value => value ? new Date(value).toLocaleString("pt-PT",{timeZone:local.timezone}) : "—";
+  function renderTransfer() {
+    el("transfer").hidden = !status.started_at;
+    const phases = {preflight:"A validar as origens", planning:"A comparar alterações", transferring:"A enviar dados", verifying:"A confirmar o recetor", complete:"Espelho concluído", failed:"Sincronização falhou", interrupted:"Sincronização interrompida"};
+    el("stage").textContent = `${phases[status.phase] || status.message || "A aguardar"}${status.source ? " · " + status.source : ""}`;
+    el("source-count").textContent = `${status.completed_sources || 0}/${status.sources_total || policy.sources.length} origens concluídas${status.source_index ? " · atual " + status.source_index : ""}`;
+    if (status.phase === "transferring" && Number.isFinite(status.percent)) el("bar").value = status.percent;
+    else if (status.phase === "complete") el("bar").value = 100;
+    else el("bar").removeAttribute("value");
+    el("bytes").textContent = formatBytes(status.bytes);
+    el("files").textContent = status.files_transferred ?? "—";
+    el("speed").textContent = status.speed || "—";
+    el("eta").textContent = status.phase === "transferring" ? status.eta || "A calcular" : "—";
+    const elapsed = status.started_at ? Math.max(0,Math.floor(((status.finished_at ? new Date(status.finished_at).getTime() : Date.now())-new Date(status.started_at).getTime())/1000)) : 0;
+    el("elapsed").textContent = `${Math.floor(elapsed/3600)}h ${Math.floor(elapsed%3600/60)}m ${elapsed%60}s`;
+    el("updated").textContent = formatTime(status.updated_at);
+    const events = Array.isArray(status.events) ? status.events.slice(-40) : [];
+    el("log-panel").hidden = !events.length;
+    el("events").replaceChildren();
+    for (const event of events) {
+      const item = document.createElement("li"), time = document.createElement("time"), text = document.createElement("span");
+      time.textContent = formatTime(event.time); text.textContent = event.message;
+      item.append(time,text); el("events").append(item);
+    }
+  }
   function lock() { ready = false; controls.forEach(id => el(id).disabled = true); }
   function render() {
     const testing = testRequestPending || status.testing === true || status.connection === "testing";
@@ -21,9 +47,10 @@
     el("last").textContent = status.last_success ? new Date(status.last_success).toLocaleString("pt-PT", {timeZone:local.timezone}) : "Ainda sem envios";
     el("progress").textContent = status.busy && status.speed ? `${status.source || ""} · ${status.percent || 0}% · ${status.speed}` : "—";
     el("summary").textContent = !policy.enabled ? "L4 desativado. A cópia remota existente mantém-se." : status.message || "Espelho ativo. Testa a ligação antes do primeiro envio.";
+    renderTransfer();
     const connection = testing ? "testing" : localTestError ? "failed" : status.connection;
     const connectionLabels = {testing:"A testar ligação", success:"Ligação confirmada", failed:"Teste falhou", interrupted:"Teste interrompido"};
-    el("connection").hidden = !connectionLabels[connection];
+    el("connection").hidden = !connectionLabels[connection] || (status.busy && !testing);
     el("connection").dataset.state = connection || "pending";
     if (!el("connection").hidden) {
       const when = !testing && !localTestError && status.tested_at ? ` · ${new Date(status.tested_at).toLocaleString("pt-PT", {timeZone:local.timezone})}` : "";

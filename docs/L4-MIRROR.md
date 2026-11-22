@@ -93,3 +93,22 @@ pré-visualizações em `data/l4-previews/`, ignorado no Git.
 O repositório Mirror inclui `tests/e2e.py`, com SSH/rsync reais num contentor efémero,
 sem dados/dispositivos dos HA; a identidade de montagem é simulada. A instalação,
 visibilidade dos UUID no HAOS e o restauro de uma amostra exigem aceitação manual.
+
+## Progresso e registos (0.2.2)
+
+O painel L4 mostra a fase, origem atual, origens concluídas, bytes lógicos processados,
+ficheiros transferidos, ritmo rsync, estimativa restante, duração e última atualização.
+Durante validação/planeamento, a barra fica indeterminada. O parser aceita linhas
+partidas entre leituras e terminações CR/LF; o último contador é publicado no fim.
+A percentagem/ETA são as do rsync e podem mudar enquanto a lista cresce. Os bytes
+incluem conteúdo reutilizado pelo algoritmo delta; não são uma medição do tráfego WAN.
+
+O histórico L4 guarda até 40 eventos por execução, com data/hora no fuso da app.
+Os logs da app recebem início, fases, plano, conclusão por origem, falha/interrupção
+e progresso até uma vez por minuto, além do contador final. Não registam nomes de
+ficheiros, comandos SSH, chaves ou respostas remotas arbitrárias. O progresso L4
+não altera o resumo nem as datas dos backups locais.
+
+O checksum não mudou: a seleção usa tamanho/data; o protocolo rsync valida os
+ficheiros reconstruídos durante a transferência. Não há comparação SHA-256 integral
+independente de toda a biblioteca remota. A tabela de integridade L3 refere-se ao HAL3.

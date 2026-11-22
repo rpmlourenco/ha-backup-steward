@@ -57,6 +57,7 @@ local = dict(
 posts = []
 offline = False
 connection_state = {}
+transfer_state = {}
 held_tests = []
 
 
@@ -82,7 +83,15 @@ def route(r):
             policy = r.request.post_data_json
         return r.fulfill(json=policy)
     if path == "l4/status":
-        return r.fulfill(json=dict(enabled=policy["enabled"], busy=False, status="idle", **connection_state))
+        return r.fulfill(
+            json={
+                "enabled": policy["enabled"],
+                "busy": False,
+                "status": "idle",
+                **connection_state,
+                **transfer_state,
+            }
+        )
     if path == "l4/test":
         connection_state.update(connection="testing", testing=True, tested_at=None)
         local["busy"] = True
@@ -114,6 +123,11 @@ try:
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.goto(f"http://127.0.0.1:{server.server_port}")
         page.wait_for_function("!document.getElementById('l4-settings').disabled")
+        assert page.evaluate("""() => {
+            const disk = document.querySelector('.destination-controls').getBoundingClientRect();
+            const mirror = document.querySelector('.mirror-card').getBoundingClientRect();
+            return mirror.top - disk.bottom >= 20;
+        }""")
         assert page.locator("#l4-run").is_disabled()
         # A disabled L4 must show immediate progress and a durable test result.
         page.locator("#l4-test").click()
@@ -155,6 +169,7 @@ try:
         assert "Teste falhou" in page.locator("#l4-connection").inner_text()
         assert "A porta SSH recusou" in page.locator("#l4-connection").inner_text()
         assert not policy["enabled"] and not policy["schedule_enabled"]
+        page.wait_for_function("!document.getElementById('l4-settings').disabled")
         assert all(path == "l4/test" for path, _ in posts)
         page.locator("#l4-settings").click()
         page.locator("#l4-dialog").wait_for(state="visible")
@@ -178,6 +193,11 @@ try:
         page.wait_for_timeout(100)
         assert sum(path == "l4/run" for path, _ in posts) == 1
         page.set_viewport_size({"width": 390, "height": 844})
+        assert page.evaluate("""() => {
+            const disk = document.querySelector('.destination-controls').getBoundingClientRect();
+            const mirror = document.querySelector('.mirror-card').getBoundingClientRect();
+            return mirror.top - disk.bottom >= 20;
+        }""")
         page.locator("#l4-settings").click()
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.locator("#l4-dialog").screenshot(path=str(previews / "sender-settings-mobile.png"))
@@ -185,6 +205,47 @@ try:
         page.locator("#l4-enabled").uncheck()
         page.wait_for_function("!document.getElementById('l4-enabled').checked")
         assert not policy["enabled"] and not policy["schedule_enabled"]
+        policy["enabled"] = True
+        local["busy"] = True
+        transfer_state.update(
+            busy=True,
+            status="running",
+            phase="transferring",
+            source="immich",
+            source_index=1,
+            sources_total=2,
+            completed_sources=0,
+            started_at="2026-11-22T12:00:00+00:00",
+            updated_at="2026-11-22T12:01:00+00:00",
+            bytes=4 * 1024**3,
+            percent=41,
+            speed="24.00MB/s",
+            eta="0:01:30",
+            files_transferred=152,
+            events=[
+                {"time": "2026-11-22T12:00:00+00:00", "stage": "transferring", "message": "A enviar immich."}
+            ],
+        )
+        page.evaluate("window.testPollers[0]()")
+        page.wait_for_function("!statusRequestPending")
+        page.evaluate("window.testPollers[1]()")
+        page.wait_for_function("!document.getElementById('l4-transfer').hidden")
+        assert page.locator("#l4-bar").get_attribute("value") == "41"
+        assert page.locator("#l4-files").inner_text() == "152"
+        assert page.locator("#l4-run").is_disabled()
+        assert page.locator("#l4-test").is_disabled()
+        assert page.locator("#l4-speed").inner_text() == "24.00MB/s"
+        assert page.locator("#l4-eta").inner_text() == "0:01:30"
+        assert "immich" in page.locator("#l4-stage").inner_text()
+        assert "0/2" in page.locator("#l4-source-count").inner_text()
+        page.locator("#l4-log-panel summary").click()
+        assert "A enviar immich" in page.locator("#l4-events").inner_text()
+        page.locator(".mirror-card").screenshot(path=str(previews / "sender-progress-mobile.png"))
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        transfer_state.update(phase="planning", percent=None, speed=None, eta=None)
+        page.evaluate("window.testPollers[1]()")
+        page.wait_for_function("document.getElementById('l4-stage').textContent.includes('comparar')")
+        assert page.locator("#l4-bar").get_attribute("value") is None
         offline = True
         page.evaluate("window.testPollers.forEach(fn=>fn())")
         page.wait_for_function("document.getElementById('l4-settings').disabled")
