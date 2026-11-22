@@ -193,6 +193,53 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.engine.state.data["l4"]["connection"], "success")
         self.assertIsNone(self.engine.state.data.get("last_success"))
 
+    async def test_connection_progress_and_result_are_visible_with_l4_disabled(self):
+        mirror = self.engine.mirror
+        self.engine.cfg["l4"]["enabled"] = False
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def probe(*args):
+            entered.set()
+            await release.wait()
+
+        with patch.object(mirror, "probe", new=probe):
+            task = asyncio.create_task(mirror.test())
+            try:
+                await entered.wait()
+                self.assertTrue(mirror.status()["testing"])
+                self.assertEqual(mirror.status()["connection"], "testing")
+                self.assertIsNone(mirror.status()["tested_at"])
+            finally:
+                release.set()
+                result = await task
+        self.assertFalse(result["testing"])
+        self.assertFalse(result["enabled"])
+        self.assertEqual(result["connection"], "success")
+        self.assertIn("confirmados", result["connection_message"])
+        self.assertIsNotNone(result["tested_at"])
+
+    async def test_failure_replaces_previous_test_and_persists_its_reason(self):
+        mirror = self.engine.mirror
+        self.engine.cfg["l4"]["enabled"] = False
+        mirror.update(connection="success", tested_at="previous", connection_message="Old success")
+        with patch.object(mirror, "probe", new=AsyncMock(side_effect=ValueError("Porta recusou a ligação."))):
+            with self.assertRaises(ValueError):
+                await mirror.test()
+        result = mirror.status()
+        self.assertEqual(result["connection"], "failed")
+        self.assertEqual(result["connection_message"], "Porta recusou a ligação.")
+        self.assertNotEqual(result["tested_at"], "previous")
+        self.assertFalse(result["testing"])
+        self.assertFalse(result["busy"])
+        self.assertFalse(result["enabled"])
+        self.assertIsNone(self.engine.state.data.get("last_success"))
+
+    async def test_restart_marks_a_pending_connection_test_as_interrupted(self):
+        self.engine.mirror.update(connection="testing", tested_at=None)
+        restored = Mirror(self.engine)
+        self.assertEqual(restored.status()["connection"], "interrupted")
+        self.assertFalse(restored.status()["testing"])
+
     async def test_disable_during_transfer_cancels_and_preserves_remote_and_local_results(self):
         self.engine.cfg.update(
             execution_mode="production",

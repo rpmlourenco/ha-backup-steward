@@ -21,7 +21,9 @@ montagem de partilhas WAN. Os ficheiros regulares mantêm a estrutura original.
 6. Publica manualmente a porta interna 2222/TCP da app Mirror no HA2 e configura
    router/firewall. Ativa o recetor e reinicia manualmente apenas essa app.
 7. Usa **Testar ligação** no emissor: confirma autenticação, identidade, UUID e
-   espaço livre do recetor, sem criar ou apagar ficheiros de dados.
+   espaço livre do recetor, sem criar ou apagar ficheiros de dados. O painel mostra
+   «A testar ligação» e depois «Ligação confirmada» ou «Teste falhou», com data e
+   detalhe. Este resultado permanece visível mesmo com L4 desligado e após recarregar.
 8. Ativa **L4** e, em modo de produção, escolhe **Sincronizar agora**. O diálogo
    confirma explicitamente que as eliminações também serão espelhadas.
 

@@ -171,8 +171,14 @@ class Mirror:
         self.directory = engine.state.directory / "l4-ssh"
         self.task = None
         self.probing = False
+        self.testing = False
         self.progress_at = 0
         saved = engine.state.data.get("l4", {})
+        if saved.get("connection") == "testing":
+            self.update(
+                connection="interrupted",
+                connection_message="O teste foi interrompido. Repete para confirmar a ligação.",
+            )
         if saved.get("status") in ("running", "testing"):
             self.update(
                 status="interrupted", message="Ligação interrompida; repete para reconciliar o espelho."
@@ -188,7 +194,10 @@ class Mirror:
 
     def status(self):
         return dict(
-            self.engine.state.data.get("l4", {}), busy=self.busy, enabled=self.engine.cfg["l4"]["enabled"]
+            self.engine.state.data.get("l4", {}),
+            busy=self.busy,
+            testing=self.testing,
+            enabled=self.engine.cfg["l4"]["enabled"],
         )
 
     def prepare(self, cfg):
@@ -250,6 +259,12 @@ class Mirror:
         if self.engine.busy or self.busy:
             raise ValueError("Aguarda o fim da execução antes de testar.")
         self.probing = True
+        self.testing = True
+        self.update(
+            connection="testing",
+            tested_at=None,
+            connection_message="A verificar a ligação SSH, as chaves e o destino. Nenhum ficheiro será enviado.",
+        )
         try:
             cfg = self.engine.cfg["l4"]
             if not cfg["sources"]:
@@ -259,16 +274,28 @@ class Mirror:
             self.update(
                 connection="success",
                 tested_at=now(),
+                connection_message="Ligação, chaves e destino confirmados. Nenhum ficheiro foi enviado.",
                 message="Ligação, chaves e destino confirmados. Nenhum ficheiro foi enviado.",
             )
-        except Exception:
+        except asyncio.CancelledError:
+            self.update(
+                connection="interrupted",
+                connection_message="O teste foi interrompido. Repete para confirmar a ligação.",
+            )
+            raise
+        except Exception as error:
             self.update(
                 connection="failed",
+                tested_at=now(),
+                connection_message=str(error)
+                if isinstance(error, ValueError)
+                else "Não foi possível validar a ligação. Confirma o endereço, porta e chaves.",
                 message="Não foi possível validar a ligação. Confirma o endereço, porta e chaves.",
             )
             raise
         finally:
             self.probing = False
+            self.testing = False
         return self.status()
 
     def start(self, scheduled_date=None):

@@ -1,24 +1,36 @@
 /* Direct mirror setup. Public keys only; never render a private key. */
 (() => {
   const el = id => document.getElementById(`l4-${id}`);
-  let policy, status, local, ready = false, pending = false;
+  let policy, status, local, ready = false, pending = false, testRequestPending = false, localTestError = null;
   const controls = ["enabled", "settings", "test", "run", "cancel", "save", "pair", "copy", "yes", "import-button"];
   function lock() { ready = false; controls.forEach(id => el(id).disabled = true); }
   function render() {
-    const idle = !local.busy && !local.state.needs_cleanup;
+    const testing = testRequestPending || status.testing === true || status.connection === "testing";
+    const idle = !local.busy && !local.state.needs_cleanup && !status.busy && !testing;
     el("enabled").checked = policy.enabled;
-    el("enabled").disabled = !ready || (!idle && !status.busy);
+    el("enabled").disabled = !ready || testing || (!idle && !status.busy);
     el("settings").disabled = el("save").disabled = el("pair").disabled = !ready || !idle;
     el("import-button").disabled = !ready || !idle;
     el("test").disabled = !ready || !idle || !policy.sources.length || !policy.host_key || !policy.host;
+    el("test").textContent = testing ? "A testar…" : "Testar ligação";
     el("run").disabled = el("yes").disabled = !ready || !idle || !policy.enabled || local.mode !== "production";
-    el("cancel").hidden = !status.busy;
-    el("cancel").disabled = !ready || !status.busy;
+    el("cancel").hidden = !status.busy || testing;
+    el("cancel").disabled = !ready || !status.busy || testing;
     el("copy").disabled = !ready || !el("pairing").value;
     el("destination").textContent = policy.host ? `${policy.label} · ${policy.host}:${policy.port}` : "Por configurar";
     el("last").textContent = status.last_success ? new Date(status.last_success).toLocaleString("pt-PT", {timeZone:local.timezone}) : "Ainda sem envios";
     el("progress").textContent = status.busy && status.speed ? `${status.source || ""} · ${status.percent || 0}% · ${status.speed}` : "—";
     el("summary").textContent = !policy.enabled ? "L4 desativado. A cópia remota existente mantém-se." : status.message || "Espelho ativo. Testa a ligação antes do primeiro envio.";
+    const connection = testing ? "testing" : localTestError ? "failed" : status.connection;
+    const connectionLabels = {testing:"A testar ligação", success:"Ligação confirmada", failed:"Teste falhou", interrupted:"Teste interrompido"};
+    el("connection").hidden = !connectionLabels[connection];
+    el("connection").dataset.state = connection || "pending";
+    if (!el("connection").hidden) {
+      const when = !testing && !localTestError && status.tested_at ? ` · ${new Date(status.tested_at).toLocaleString("pt-PT", {timeZone:local.timezone})}` : "";
+      const defaultDetails = {success:"SSH, chaves e destino confirmados no último teste.", failed:"Repete o teste para obter o erro detalhado.", interrupted:"Repete o teste para confirmar a ligação."};
+      const detail = testing ? "A verificar SSH, chaves e destino. Nenhum ficheiro será enviado." : localTestError || status.connection_message || defaultDetails[connection] || "";
+      el("connection").textContent = `${connectionLabels[connection]}${when}. ${detail}`;
+    }
   }
   async function refreshMirror() {
     if (pending) return;
@@ -36,6 +48,26 @@
     if (!ready) return;
     try { await api(`l4/${name}`, "POST", {}); await refreshMirror(); }
     catch(e) { toast(e.message); await refreshMirror(); }
+  }
+  async function testConnection() {
+    if (!ready || el("test").disabled || testRequestPending) return;
+    testRequestPending = true;
+    localTestError = null;
+    render();
+    try {
+      const result = await api("l4/test", "POST", {});
+      if (result?.connection !== "success") throw Error("O teste não devolveu uma confirmação válida. Repete para confirmar a ligação.");
+      status = {...status, ...result};
+      toast("Ligação confirmada. Nenhum ficheiro foi enviado.");
+    } catch(e) {
+      localTestError = e.message;
+      status = {...status, testing:false, connection:"failed", tested_at:null, connection_message:e.message};
+      toast(e.message);
+    } finally {
+      testRequestPending = false;
+      render();
+      await refreshMirror();
+    }
   }
   el("enabled").onchange = async () => {
     if (!ready) return;
@@ -107,7 +139,7 @@
   };
   el("copy").onclick = async () => { try { await navigator.clipboard.writeText(el("pairing").value); toast("Emparelhamento público copiado."); } catch { el("pairing").select(); } };
   el("close").onclick = () => el("dialog").close();
-  el("test").onclick = () => action("test");
+  el("test").onclick = testConnection;
   el("cancel").onclick = () => action("cancel");
   el("run").onclick = () => { if (ready && !el("run").disabled) el("confirm").showModal(); };
   el("no").onclick = () => el("confirm").close();

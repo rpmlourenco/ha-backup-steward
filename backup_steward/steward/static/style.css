@@ -726,6 +726,9 @@ summary {
 
 /* Remote mirror setup shares the local app's colours and spacing. */
 .mirror-card { border-top: 3px solid var(--blue); }
+.mirror-connection { margin: 18px 0; padding: 12px 16px; border-left: 3px solid var(--blue); border-radius: 0 10px 10px 0; background: var(--bg); line-height: 1.65; overflow-wrap: anywhere; }
+.mirror-connection[data-state="success"] { border-left-color: var(--green); }
+.mirror-connection[data-state="failed"], .mirror-connection[data-state="interrupted"] { border-left-color: #e06b49; }
 .mirror-switch { display: flex; flex-direction: row; align-items: center; gap: 10px; margin: 0; white-space: nowrap; }
 .mirror-switch input { appearance: none; position: relative; flex: 0 0 44px; width: 44px; height: 24px; padding: 0; border: 0; border-radius: 20px; background: var(--muted); cursor: pointer; }
 .mirror-switch input::before { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; background: white; border-radius: 50%; transition: transform .15s; }

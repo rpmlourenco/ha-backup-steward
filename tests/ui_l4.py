@@ -56,6 +56,8 @@ local = dict(
 )
 posts = []
 offline = False
+connection_state = {}
+held_tests = []
 
 
 def route(r):
@@ -80,7 +82,12 @@ def route(r):
             policy = r.request.post_data_json
         return r.fulfill(json=policy)
     if path == "l4/status":
-        return r.fulfill(json=dict(enabled=policy["enabled"], busy=False, status="idle"))
+        return r.fulfill(json=dict(enabled=policy["enabled"], busy=False, status="idle", **connection_state))
+    if path == "l4/test":
+        connection_state.update(connection="testing", testing=True, tested_at=None)
+        local["busy"] = True
+        held_tests.append(r)
+        return
     if path == "l4/pair":
         return r.fulfill(
             json=dict(protocol="steward-mirror-v1", sources=[dict(name="immich", public_key=KEY)])
@@ -108,6 +115,47 @@ try:
         page.goto(f"http://127.0.0.1:{server.server_port}")
         page.wait_for_function("!document.getElementById('l4-settings').disabled")
         assert page.locator("#l4-run").is_disabled()
+        # A disabled L4 must show immediate progress and a durable test result.
+        page.locator("#l4-test").click()
+        page.wait_for_function("document.getElementById('l4-connection').dataset.state === 'testing'")
+        assert page.locator("#l4-test").is_disabled()
+        assert page.locator("#l4-test").inner_text() == "A testar…"
+        page.wait_for_timeout(100)
+        assert len(held_tests) == 1
+        assert not policy["enabled"]
+        connection_state.update(
+            connection="success",
+            testing=False,
+            tested_at="2026-11-22T12:00:00+00:00",
+            connection_message="Ligação, chaves e destino confirmados. Nenhum ficheiro foi enviado.",
+        )
+        local["busy"] = False
+        held_tests.pop().fulfill(json=dict(enabled=False, busy=False, **connection_state))
+        page.wait_for_function("document.getElementById('l4-connection').dataset.state === 'success'")
+        assert "Ligação confirmada" in page.locator("#l4-connection").inner_text()
+        page.reload()
+        page.wait_for_function("!document.getElementById('l4-test').disabled")
+        assert "Ligação confirmada" in page.locator("#l4-connection").inner_text()
+        assert "L4 desativado" in page.locator("#l4-summary").inner_text()
+        page.locator("#l4-test").click()
+        page.wait_for_timeout(100)
+        assert len(held_tests) == 1
+        connection_state.update(
+            connection="failed",
+            testing=False,
+            tested_at="2026-11-22T12:01:00+00:00",
+            connection_message="A porta SSH recusou a ligação.",
+        )
+        local["busy"] = False
+        held_tests.pop().fulfill(status=400, json={"error": "A porta SSH recusou a ligação."})
+        page.wait_for_function("document.getElementById('l4-connection').dataset.state === 'failed'")
+        assert "A porta SSH recusou" in page.locator("#l4-connection").inner_text()
+        page.reload()
+        page.wait_for_function("!document.getElementById('l4-settings').disabled")
+        assert "Teste falhou" in page.locator("#l4-connection").inner_text()
+        assert "A porta SSH recusou" in page.locator("#l4-connection").inner_text()
+        assert not policy["enabled"] and not policy["schedule_enabled"]
+        assert all(path == "l4/test" for path, _ in posts)
         page.locator("#l4-settings").click()
         page.locator("#l4-dialog").wait_for(state="visible")
         assert page.locator(".mirror-source").count() == 3
@@ -145,7 +193,7 @@ try:
         assert not errors, errors
         browser.close()
         print(
-            "L4 UI passed: guided setup, source selection, public pairing, toggle, confirmation, offline locks, desktop/mobile layout."
+            "L4 UI passed: visible pending/success/failure tests with L4 off, persisted results after reload, guided setup, pairing, toggle, confirmation, offline locks and desktop/mobile layout."
         )
 finally:
     server.shutdown()

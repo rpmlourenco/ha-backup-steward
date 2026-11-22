@@ -113,3 +113,13 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
   passes with the unchanged 20 integration entities. Ruff and Git whitespace checks pass.
 - No installation, live mirror, HA service call, disk/power operation, router/proxy
   change, commit or publication was performed. Manual HAOS acceptance remains pending.
+
+## 0.2.1 — visible connection test feedback
+
+- 195 isolated unit tests pass. New cases cover pending/success/failure test status
+  with L4 disabled, persisted failure detail/timestamp and interrupted-test recovery.
+- All three Chrome suites pass. L4 acceptance holds a test response to verify the
+  immediate pending indicator and disabled button, then checks success/failure
+  visibility and persistence after a page reload while L4 remains disabled.
+- AMD64/ARM64 builds and official isolated Home Assistant 2026.10.3 smoke pass.
+- No live HA connection, configuration edit, restart or transfer was performed.

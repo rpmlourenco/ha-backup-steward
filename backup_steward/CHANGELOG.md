@@ -1,3 +1,9 @@
+## 0.2.1
+
+- Show persistent connection test progress, success and failure even while L4 is disabled.
+- Disable repeated test requests while pending, show an explicit success confirmation and keep failure details after reload.
+- Keep test timestamps independent of backup outcomes and mark interrupted tests after restart.
+
 ## 0.2.0
 
 - Add optional L4 direct rsync/SSH mirror, disabled by default, with its own schedule and outcomes.
