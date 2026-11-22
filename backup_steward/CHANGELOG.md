@@ -1,3 +1,7 @@
+## 0.2.3
+
+- Remove the experimental label from app metadata and current documentation.
+
 ## 0.2.2
 
 - Separate the destination-disk and remote-mirror cards with consistent spacing on desktop and mobile.

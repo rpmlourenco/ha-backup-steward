@@ -1,8 +1,8 @@
 {
   "name": "HA Backup Steward",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "slug": "backup_steward",
-  "description": "Backups L1/L2/L3, offline disks and integrity checks in one app. Experimental; observe-only by default.",
+  "description": "Backups L1/L2/L3, offline disks and integrity checks in one app. Observe-only by default.",
   "url": "https://github.com/rpmlourenco/ha-backup-steward",
   "arch": [
     "aarch64",
@@ -10,7 +10,7 @@
   ],
   "startup": "application",
   "boot": "manual",
-  "stage": "experimental",
+  "stage": "stable",
   "init": true,
   "timeout": 120,
   "hassio_api": true,
