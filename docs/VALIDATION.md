@@ -147,3 +147,15 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
   without animation, omitted unknown source counts and the normal card border.
 - ARM64 build, Ruff, Git whitespace checks and the official isolated Home
   Assistant 2026.10.3 smoke pass. No live HA operation was performed.
+
+## 0.2.5 — L4 after local shutdown
+
+- 207 isolated unit tests pass. The chained transfer starts after successful
+  local backup, verified disk removal, confirmed power-off and host lease release.
+- Regressions cover local failure, uncertain power-off/flush, disabled L4, test
+  mode and checksum-only; none starts L4. During chained L4, the shared task stays
+  reserved and remote-only cancellation preserves the successful local result.
+- Retired L4 schedule fields are discarded. The Chrome L4 suite confirms no
+  separate scheduling controls and preserves standalone manual synchronization.
+- ARM64 build, official isolated HA 2026.10.3 smoke, Ruff and whitespace checks
+  pass. No real HA access, backup, configuration edit or installation was used.

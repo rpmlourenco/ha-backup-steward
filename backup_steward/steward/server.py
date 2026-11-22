@@ -231,12 +231,6 @@ async def scheduler(engine):
                 engine.start("backup", day)
             except ValueError:
                 engine.state.event("schedule_blocked", "Scheduled operation could not start")
-        if (hasattr(engine, "mirror") and not engine.busy
-                and not engine.state.data.get("needs_cleanup") and engine.mirror.due(now)):
-            from zoneinfo import ZoneInfo
-
-            day = now.astimezone(ZoneInfo(engine.cfg["timezone"])).date().isoformat()
-            engine.mirror.start(day)
         await asyncio.sleep(30)
 
 

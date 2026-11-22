@@ -32,7 +32,11 @@ class Engine:
 
     @property
     def busy(self):
-        return self.lock.locked() or bool(self.task and not self.task.done()) or bool(getattr(self, "mirror", None) and self.mirror.probing)
+        return (
+            self.lock.locked()
+            or bool(self.task and not self.task.done())
+            or bool(getattr(self, "mirror", None) and self.mirror.probing)
+        )
 
     def start(self, mode="backup", scheduled_date=None, *, source=None):
         if self.busy:
@@ -408,6 +412,24 @@ class Engine:
                 if not state.data.get("needs_cleanup"):
                     await host.release()
                 await host.close()
+
+        # The local workflow and host lease have finished. Keep the same task
+        # reserved while L4 acquires the shared lock; remote failure cannot
+        # change the completed local result or reopen the destination disk.
+        if (
+            is_backup
+            and cfg["execution_mode"] == "production"
+            and state.data.get("state") == "success"
+            and not state.data.get("needs_cleanup")
+            and state.data.get("safe_to_power_off")
+            and self.cfg.get("l4", {}).get("enabled")
+        ):
+            from .l4 import Mirror
+
+            if not hasattr(self, "mirror"):
+                self.mirror = Mirror(self)
+            self.mirror.task = asyncio.current_task()
+            await self.mirror.run(trigger="after_local", local_run_id=run_id)
 
     async def recover(self):
         other_task = self.task and self.task is not asyncio.current_task() and not self.task.done()

@@ -4,7 +4,7 @@
 
 Encrypted Home Assistant backups, verified offline copies, and safe disk shutdown — packaged as one app with a lightweight companion integration.
 
-> **Version 0.2.4.** The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
+> **Version 0.2.5.** The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
 
 ![Backup Steward interface](docs/images/overview.png)
 
@@ -165,8 +165,8 @@ The isolated browser regression suite runs in CI using Playwright/Chromium: `pyt
 
 ## L4 remote mirror
 
-Optional direct rsync over SSH to the companion **Data Steward Mirror** app. L4 and
-its daily schedule are disabled on upgrade. Open **Configurar espelho** to select
+Optional direct rsync over SSH to the companion **Data Steward Mirror** app. L4 is
+disabled by default. Open **Configurar espelho** to select
 configured sources, detect/confirm their filesystem UUIDs, prepare public pairing
 keys and import the receiver identity. No private key is returned to the browser.
 
@@ -175,6 +175,11 @@ worker and preserves the remote files. Manual sends require confirmation; delete
 source files are deleted remotely within the configured limits. The remote mirror
 has no additional version history. It runs only in production, under the local
 worker lock, with separate progress/results and no HAL3 power/mount operations.
+When enabled, L4 follows each successful production backup, after safe disk removal,
+confirmed socket power-off and release of the local host lease. It has no separate
+schedule. **Sincronizar agora** remains available to run only L4. Failed/cancelled
+local runs, test mode, checksum-only and restore operations do not trigger L4.
+Old independent L4 schedule settings are ignored on upgrade.
 
 See [the L4 setup and operating guide](docs/L4-MIRROR.md). Installation and network
 configuration are manual; repository development never starts a live transfer.

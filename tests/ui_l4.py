@@ -30,8 +30,6 @@ server = ThreadingHTTPServer(
 Thread(target=server.serve_forever, daemon=True).start()
 policy = dict(
     enabled=False,
-    schedule_enabled=False,
-    schedule_time="06:00",
     label="Lisboa",
     host="mirror.example.test",
     port=2222,
@@ -168,11 +166,13 @@ try:
         page.wait_for_function("!document.getElementById('l4-settings').disabled")
         assert "Teste falhou" in page.locator("#l4-connection").inner_text()
         assert "A porta SSH recusou" in page.locator("#l4-connection").inner_text()
-        assert not policy["enabled"] and not policy["schedule_enabled"]
+        assert not policy["enabled"]
         page.wait_for_function("!document.getElementById('l4-settings').disabled")
         assert all(path == "l4/test" for path, _ in posts)
         page.locator("#l4-settings").click()
         page.locator("#l4-dialog").wait_for(state="visible")
+        assert page.locator("#l4-form [name=schedule_enabled], #l4-form [name=schedule_time]").count() == 0
+        assert "depois do fecho seguro" in page.locator("#l4-form").inner_text()
         assert page.locator(".mirror-source").count() == 3
         page.locator("#l4-pair").click()
         page.locator("#l4-pairing").wait_for(state="visible")
@@ -204,7 +204,7 @@ try:
         page.locator("#l4-close").click()
         page.locator("#l4-enabled").uncheck()
         page.wait_for_function("!document.getElementById('l4-enabled').checked")
-        assert not policy["enabled"] and not policy["schedule_enabled"]
+        assert not policy["enabled"]
         policy["enabled"] = True
         local["busy"] = True
         transfer_state.update(

@@ -65,6 +65,114 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             await self.run_engine("backup_only")
         self.assertEqual(self.state.data["state"], "success")
 
+    async def test_l4_follows_successful_backup_after_disk_power_off_and_lease_release(self):
+        self.cfg.update(execution_mode="production", l4={"enabled": True})
+
+        async def remote(**kwargs):
+            self.disks.safe_remove.assert_awaited_once()
+            self.disks.verify_removed.assert_awaited_once()
+            self.assertEqual(self.api.power.await_args.args, ("switch.disk", False))
+            self.host.release.assert_awaited_once()
+            self.host.close.assert_awaited_once()
+            self.assertFalse(self.engine.lock.locked())
+            self.assertEqual(self.state.data["state"], "success")
+            self.assertEqual(kwargs["trigger"], "after_local")
+            self.assertEqual(kwargs["local_run_id"], self.state.data["run_id"])
+            self.state.update(l4={"status": "failed"})
+
+        self.engine.mirror = Mock(probing=False, run=AsyncMock(side_effect=remote))
+        with patch("steward.engine.prune_l2", return_value=[]):
+            await self.run_engine("backup_only")
+        self.engine.mirror.run.assert_awaited_once()
+        self.assertEqual(self.state.data["state"], "success")
+        self.assertIsNotNone(self.state.data["last_success"])
+        self.assertEqual(self.state.data["l4"]["status"], "failed")
+
+    async def test_l4_does_not_follow_failed_local_backup_even_after_cleanup(self):
+        self.cfg.update(execution_mode="production", l4={"enabled": True})
+        self.engine.mirror = Mock(probing=False, run=AsyncMock())
+        self.copier.copy.side_effect = RuntimeError("Fixture copy failed")
+        with patch("steward.engine.prune_l2", return_value=[]):
+            await self.run_engine("backup_only")
+        self.assertEqual(self.state.data["state"], "failed")
+        self.assertFalse(self.state.data["needs_cleanup"])
+        self.engine.mirror.run.assert_not_awaited()
+
+    async def test_l4_does_not_start_when_power_off_is_unconfirmed(self):
+        self.cfg.update(execution_mode="production", l4={"enabled": True})
+        self.engine.mirror = Mock(probing=False, run=AsyncMock())
+
+        async def power(entity, on):
+            if not on:
+                raise RuntimeError("Fixture switch state unknown")
+
+        self.api.power.side_effect = power
+        with patch("steward.engine.prune_l2", return_value=[]):
+            await self.run_engine("backup_only")
+        self.assertTrue(self.state.data["needs_cleanup"])
+        self.engine.mirror.run.assert_not_awaited()
+
+    async def test_l4_does_not_follow_test_mode_or_checksum_only(self):
+        self.cfg["l4"] = {"enabled": True}
+        self.engine.mirror = Mock(probing=False, run=AsyncMock())
+        await self.run_engine("backup_only")
+        self.engine.mirror.run.assert_not_awaited()
+        self.cfg["execution_mode"] = "production"
+        await self.run_engine("checksum")
+        self.engine.mirror.run.assert_not_awaited()
+
+    async def test_disabled_l4_does_not_follow_production_backup(self):
+        self.cfg.update(execution_mode="production", l4={"enabled": False})
+        self.engine.mirror = Mock(probing=False, run=AsyncMock())
+        with patch("steward.engine.prune_l2", return_value=[]):
+            await self.run_engine("backup_only")
+        self.assertEqual(self.state.data["state"], "success")
+        self.engine.mirror.run.assert_not_awaited()
+
+    async def test_chained_l4_keeps_the_task_reserved_and_can_be_cancelled_alone(self):
+        from steward.l4 import Mirror
+
+        self.cfg.update(execution_mode="production", l4={"enabled": True})
+        self.engine.mirror = Mirror(self.engine)
+        entered = asyncio.Event()
+
+        async def remote(**kwargs):
+            async with self.engine.lock:
+                entered.set()
+                await asyncio.Event().wait()
+
+        with (
+            patch("steward.engine.prune_l2", return_value=[]),
+            patch("steward.engine.shutil.disk_usage", return_value=Mock(free=1000 * 1024**3)),
+            patch.object(self.engine.mirror, "run", side_effect=remote),
+        ):
+            task = self.engine.start("backup_only")
+            try:
+                await asyncio.wait_for(entered.wait(), 5)
+                self.assertIs(self.engine.mirror.task, task)
+                self.assertTrue(self.engine.busy)
+                with self.assertRaises(ValueError):
+                    self.engine.start("backup_only")
+                self.assertFalse(self.engine.can_cancel)
+                await self.engine.mirror.cancel()
+            finally:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        self.assertFalse(self.engine.busy)
+        self.assertEqual(self.state.data["state"], "success")
+        self.assertEqual(self.api.power.await_args.args, ("switch.disk", False))
+        self.disks.safe_remove.assert_awaited_once()
+
+    async def test_l4_does_not_follow_unconfirmed_disk_flush(self):
+        self.cfg.update(execution_mode="production", l4={"enabled": True})
+        self.engine.mirror = Mock(probing=False, run=AsyncMock())
+        self.disks.safe_remove.side_effect = RuntimeError("Fixture flush unknown")
+        with patch("steward.engine.prune_l2", return_value=[]):
+            await self.run_engine("backup_only")
+        self.assertTrue(self.state.data["needs_cleanup"])
+        self.engine.mirror.run.assert_not_awaited()
+
     async def test_backup_only_skips_overdue_full_checksum_but_keeps_copy_checks(self):
         self.engine.cfg["execution_mode"] = "production"
         with (

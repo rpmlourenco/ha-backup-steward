@@ -1,3 +1,9 @@
+## 0.2.5
+
+- Run enabled L4 after a successful production backup, once safe disk removal, socket power-off and local lease release have completed.
+- Remove the independent L4 schedule and discard retired settings on upgrade.
+- Preserve standalone manual L4 synchronization and independent remote results.
+
 ## 0.2.4
 
 - Remove the blue top border from the remote-mirror card.

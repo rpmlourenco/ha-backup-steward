@@ -103,7 +103,6 @@
   el("enabled").onchange = async () => {
     if (!ready) return;
     const next = {...policy, enabled: el("enabled").checked};
-    if (!next.enabled) next.schedule_enabled = false;
     lock();
     try { await api("l4/config", "PUT", next); }
     catch(e) { toast(e.message); }
@@ -150,7 +149,6 @@
     event.preventDefault(); if (!ready) return;
     const next = {...policy};
     for (const input of event.target.elements) if (input.name) next[input.name] = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value.trim();
-    if (!next.enabled) next.schedule_enabled = false;
     next.sources = [...el("sources").children].filter(card => card.querySelector(".source-selected").checked).map(card => ({source:card.dataset.path, name:card.querySelector('[data-field="name"]').value.trim(), uuid:card.querySelector('[data-field="uuid"]').value.trim()}));
     try { await api("l4/config", "PUT", next); el("error").textContent = "Definições guardadas. Podes preparar as chaves e testar a ligação."; await refreshMirror(); }
     catch(e) { el("error").textContent = e.message; }

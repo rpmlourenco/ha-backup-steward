@@ -52,6 +52,9 @@ Restore shares the app lock, cancellation and safe disk shutdown. It does not cr
 
 Usa **Configurar espelho** no painel L4. A configuração é guiada, com deteção de UUID,
 chaves públicas por origem, importação da identidade do recetor e teste sem escrita.
-O interruptor **Ativar L4** começa desligado e é independente da agenda local.
+O interruptor **Ativar L4** começa desligado. Quando ativo, o L4 segue cada backup
+local de produção concluído com sucesso, depois do fecho seguro do disco e da
+confirmação da tomada desligada. Não tem agenda própria. **Sincronizar agora**
+continua disponível para correr apenas L4, sem ligar o disco nem repetir L1–L3.
 Desligá-lo interrompe envios e conserva os ficheiros remotos. L4 só envia em produção.
 Consulta `docs/L4-MIRROR.md` no repositório para preparar a app Mirror e a rede.

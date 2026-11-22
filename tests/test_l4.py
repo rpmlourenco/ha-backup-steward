@@ -2,7 +2,6 @@
 
 import asyncio
 import base64
-from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
@@ -50,7 +49,6 @@ class PolicyTests(unittest.TestCase):
             {"sources": [{"source": "/media/immich", "name": "../outside", "uuid": UUID}]},
             {"port": True},
             {"enabled": True},
-            {"enabled": False, "schedule_enabled": True},
         ):
             raw = dict(policy(), **changes) if changes != {"enabled": True} else changes
             with self.subTest(changes=changes), self.assertRaises((ValueError, TypeError)):
@@ -154,17 +152,11 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.engine.mirror.task.done())
         self.assertEqual(self.engine.state.data["last_success"], "local-success")
 
-    async def test_schedule_disabled_observe_and_same_date(self):
-        mirror = self.engine.mirror
-        self.engine.cfg["execution_mode"] = "production"
-        self.engine.cfg["l4"]["schedule_enabled"] = True
-        instant = datetime(2026, 11, 22, 12, tzinfo=timezone.utc)
-        self.assertTrue(mirror.due(instant))
-        mirror.update(schedule_date="2026-11-22")
-        self.assertFalse(mirror.due(instant))
-        mirror.update(schedule_date=None)
-        self.engine.cfg["l4"]["enabled"] = False
-        self.assertFalse(mirror.due(instant))
+    async def test_retired_schedule_is_discarded_on_upgrade(self):
+        cfg = validate({"l4": dict(policy(), schedule_enabled=True, schedule_time="06:00")})
+        self.assertNotIn("schedule_enabled", cfg["l4"])
+        self.assertNotIn("schedule_time", cfg["l4"])
+        self.assertFalse(hasattr(self.engine.mirror, "due"))
 
     async def test_ingress_only_and_schema(self):
         with patch.dict("os.environ", {"STEWARD_INGRESS_IP": "127.0.0.1"}):
@@ -298,13 +290,14 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
             async with TestClient(TestServer(application(self.engine, ingress=True))) as client:
                 response = await client.put(
                     "/v1/l4/config",
-                    json=dict(self.engine.cfg["l4"], enabled=False, schedule_enabled=False),
+                    json=dict(self.engine.cfg["l4"], enabled=False),
                     headers={"X-Steward-UI": "1"},
                 )
                 self.assertEqual(response.status, 200, await response.text())
         self.assertTrue(self.engine.mirror.task.done())
         self.assertFalse(self.engine.cfg["l4"]["enabled"])
         self.assertEqual(self.engine.state.data["last_success"], "local-result")
+        self.engine.api.power.assert_not_awaited()
         self.assertEqual(self.engine.state.data["l4"]["last_success"], "remote-result")
 
     async def test_full_worker_success_and_plan_guard_preserve_local_dates(self):

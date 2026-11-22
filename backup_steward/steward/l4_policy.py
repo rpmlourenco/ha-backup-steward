@@ -7,8 +7,6 @@ import uuid
 
 DEFAULTS = {
     "enabled": False,
-    "schedule_enabled": False,
-    "schedule_time": "06:00",
     "label": "Lisboa",
     "host": "",
     "port": 2222,
@@ -43,10 +41,14 @@ def public_key(value):
 
 
 def validate(raw, allowed):
-    if not isinstance(raw, dict) or set(raw) - set(DEFAULTS):
+    if not isinstance(raw, dict):
+        raise ValueError("Configuração L4 inválida.")
+    # Retired independent schedule is ignored when loading old saved settings.
+    raw = {key: value for key, value in raw.items() if key not in {"schedule_enabled", "schedule_time"}}
+    if set(raw) - set(DEFAULTS):
         raise ValueError("Configuração L4 inválida.")
     cfg = dict(copy.deepcopy(DEFAULTS), **copy.deepcopy(raw))
-    for key in ("enabled", "schedule_enabled"):
+    for key in ("enabled",):
         if type(cfg[key]) is not bool:
             raise ValueError("Os interruptores L4 têm de ser booleanos.")
     for key, lo, hi in (
@@ -63,8 +65,6 @@ def validate(raw, allowed):
         cfg["host"] and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.:-]{0,252}", cfg["host"])
     ):
         raise ValueError("Indica apenas o nome DNS ou IP, sem https:// nem caminho.")
-    if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", cfg["schedule_time"]):
-        raise ValueError("A hora L4 deve usar HH:MM.")
     if cfg["destination_uuid"]:
         try:
             uuid.UUID(cfg["destination_uuid"])
@@ -94,6 +94,4 @@ def validate(raw, allowed):
         raise ValueError(
             "Para ativar L4, configura endereço, identidade SSH, UUID do destino e pelo menos uma origem."
         )
-    if cfg["schedule_enabled"] and not cfg["enabled"]:
-        raise ValueError("Ativa L4 antes de ligar a sua agenda.")
     return cfg

@@ -7,7 +7,6 @@ from pathlib import Path
 import re
 import secrets
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 
 from .state import atomic_json
 from .storage import filesystem_call
@@ -320,7 +319,7 @@ class Mirror:
             self.testing = False
         return self.status()
 
-    def start(self, scheduled_date=None):
+    def start(self):
         cfg = self.engine.cfg["l4"]
         if not cfg["enabled"] or self.engine.cfg["execution_mode"] != "production":
             raise ValueError(
@@ -329,7 +328,7 @@ class Mirror:
         if self.engine.busy or self.busy or self.engine.state.data.get("needs_cleanup"):
             raise ValueError("Conclui a execução ou o fecho seguro local antes de iniciar L4.")
         self.engine.control = None
-        self.task = asyncio.create_task(self.run(scheduled_date))
+        self.task = asyncio.create_task(self.run())
         self.engine.task = self.task
 
     async def cancel(self):
@@ -337,7 +336,7 @@ class Mirror:
             self.task.cancel()
             await asyncio.gather(self.task, return_exceptions=True)
 
-    async def run(self, scheduled_date=None):
+    async def run(self, *, trigger="manual", local_run_id=None):
         async with self.engine.lock:
             cfg = self.engine.cfg["l4"]
             results = []
@@ -356,9 +355,15 @@ class Mirror:
                 bytes=0,
                 message="A validar as origens e o recetor.",
                 results=[],
-                schedule_date=scheduled_date or self.engine.state.data.get("l4", {}).get("schedule_date"),
+                trigger=trigger,
+                local_run_id=local_run_id,
             )
-            self.event("preflight", "Sincronização iniciada; a validar as origens e o recetor.")
+            self.event(
+                "preflight",
+                "Backup local concluído; disco e tomada desligados. A iniciar L4."
+                if trigger == "after_local"
+                else "Sincronização manual iniciada; a validar as origens e o recetor.",
+            )
             try:
                 counts = {}
                 for item in cfg["sources"]:
@@ -492,21 +497,6 @@ class Mirror:
                 f"{self.engine.state.data['l4'].get('source')}: {metric['bytes']} bytes processados; {metric['percent']}%; ritmo rsync={metric['speed']}; ficheiros transferidos={metric['files_transferred']}; ETA={metric['eta'] or '—'}.",
             )
 
-    def due(self, instant):
-        cfg = self.engine.cfg["l4"]
-        local = instant.astimezone(ZoneInfo(self.engine.cfg["timezone"]))
-        return (
-            cfg["enabled"]
-            and cfg["schedule_enabled"]
-            and self.engine.cfg["execution_mode"] == "production"
-            and (
-                not self.engine.state.data.get("l4", {}).get("schedule_not_before")
-                or instant >= datetime.fromisoformat(self.engine.state.data["l4"]["schedule_not_before"])
-            )
-            and local.strftime("%H:%M") >= cfg["schedule_time"]
-            and self.engine.state.data.get("l4", {}).get("schedule_date") != local.date().isoformat()
-        )
-
 
 def count_files(root):
     def failed(error):
@@ -586,9 +576,7 @@ def routes(app, engine):
             return web.json_response(engine.cfg["l4"])
         raw = await request.json()
         updated = validate(dict(engine.cfg, l4=raw))
-        disabling = engine.mirror.busy and updated["l4"] == dict(
-            engine.cfg["l4"], enabled=False, schedule_enabled=False
-        )
+        disabling = engine.mirror.busy and updated["l4"] == dict(engine.cfg["l4"], enabled=False)
         if (engine.busy or engine.mirror.busy or engine.state.data.get("needs_cleanup")) and not disabling:
             raise ValueError(
                 "Conclui a execução antes de alterar o destino L4. Podes desativar o L4 em curso."
@@ -605,16 +593,6 @@ def routes(app, engine):
                 speed=None,
                 percent=0,
                 message="Destino ou origens alterados. Testa a ligação antes do envio.",
-            )
-        if updated["l4"]["schedule_enabled"] and any(
-            updated["l4"][k] != old[k] for k in ("enabled", "schedule_enabled", "schedule_time")
-        ):
-            from .schedule import next_run
-
-            engine.mirror.update(
-                schedule_not_before=next_run(
-                    datetime.now(timezone.utc), dict(updated, schedule_time=updated["l4"]["schedule_time"])
-                )
             )
         atomic_json(engine.state.directory / "config.json", updated)
         engine.cfg = updated

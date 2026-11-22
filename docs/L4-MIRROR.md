@@ -33,14 +33,19 @@ O domínio fornecido foi `home2.rpmloureco.uk`; a resolução/ortografia não fi
 confirmada. Não foi gravado como destino e nenhuma configuração de rede foi alterada.
 O reverse proxy HTTP que dá acesso ao HA2 não encaminha SSH: precisa de TCP próprio.
 
-## Interruptores e agenda
+## Execução automática e manual
 
 - **Ativar L4:** permite ou bloqueia todos os novos envios. Desativar cancela e
   aguarda o processo de transferência; o que já chegou ao destino fica preservado.
-- **Sincronizar diariamente:** agenda L4 na hora escolhida, no fuso da app.
-  Ligar/reagendar arma a próxima ocorrência futura, sem envio imediato por atraso.
-- A agenda pertence à app; não cria automações HA. Uma data diária é tentada uma
-  vez; o dia perdido não cria uma fila histórica. Podes repetir manualmente.
+- L4 arranca após cada backup local de produção concluído com sucesso, apenas
+  depois do fecho seguro do disco, confirmação da tomada desligada e libertação
+  da reserva local. Aplica-se aos backups manuais e aos da agenda local.
+- Não há agenda L4 separada. As antigas opções de hora/agenda L4 são descartadas
+  ao carregar a configuração, sem executar um envio por estar atrasado.
+- **Sincronizar agora:** executa apenas o L4, com confirmação, sem ligar o disco
+  HAL3 nem executar backups locais. Permite repetir um envio remoto que falhou.
+- Falhas/cancelamentos locais, recuperação, restauro, checksum isolado e modo de
+  teste não desencadeiam um envio automático. Falhar L4 não repete o backup local.
 - L4 partilha a exclusão mútua das operações locais. Aguarda a conclusão de L1–L3,
   restauro ou sessão manual de disco; uma recuperação local pendente bloqueia-o.
 - Falhas de rede afetam o resultado L4, não as datas/resultados L1–L3. O espelho
