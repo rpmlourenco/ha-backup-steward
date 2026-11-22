@@ -511,6 +511,7 @@ $("config-form").onsubmit = async (event) => {
   event.preventDefault();
   const form = event.target;
   const value = { ...config };
+  delete value.l4; // L4 has its own guided editor; preserve its current policy.
   for (const input of form.elements) {
     if (!input.name) continue;
     value[input.name] =

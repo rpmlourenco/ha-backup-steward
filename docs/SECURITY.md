@@ -2,7 +2,7 @@
 
 This app manages physical disks and therefore is privileged. Protection mode must be disabled for `full_access`. Host D-Bus can perform privileged systemd operations; the app's code restricts itself to named mount/lease units, but the container itself is not a security boundary against a compromise of its own privileged process.
 
-- No Docker socket, host PID namespace, SSH key or host-installed helper is needed.
+- Local L1-L3 require no Docker socket, host PID namespace, host SSH key or host-installed helper. Optional L4 uses its own outbound SSH keys only.
 - Kernel disk removal uses a temporary host systemd unit with a fixed executable, fixed stdin and a validated kernel-device path. The app does not remount sysfs or request additional container privileges. The owned backup lease is required; the final SCSI proof remains mandatory.
 - The Supervisor injects its app token. Never enter, print or commit it.
 - The integration uses a separate random pairing token scoped to this app API.
@@ -27,3 +27,25 @@ Restore is a two-step authenticated operation: `/v1/restore/preview` accepts exa
 The backup disk is mounted read-only. Every selected mirror, original root identity, nested mount boundary and space estimate is checked before the first deletion. Cleanup retains each selected root and unlinks children using directory file descriptors without following links. Transfers go from `mirror/<area>` to that exact configured original area with `--inplace`; they never use sync, history expiry or L2 creation. Other areas and the backup mirror are not deletion targets. Applications using selected original areas must be stopped by the operator; concurrent writes are not a supported restore mode.
 
 Missing ordinary restore areas are planned without filesystem writes during preview/start. The nearest existing parent is pinned by device/inode; all selected mirrors and space estimates must pass before directories are created through no-follow directory file descriptors. An area that appears after preparation requires a new confirmation. The primary source mount remains mandatory and is never replaced with a directory on underlying storage.
+
+## L4 remote boundary
+
+L4 is opt-in and production-only. Its endpoints exist only on ingress, with the
+same peer and custom-header protections as settings. Remote destinations have
+validated host/port fields, a pinned Ed25519 server key and an expected filesystem
+UUID; arbitrary URLs and SSH options are not accepted. Sources must be exact
+configured local roots with their own verified ext4 UUIDs.
+
+Per-source private keys stay in the app's private data directory with restricted
+permissions and are never returned by an API. The pairing endpoint exports only
+public keys. Raw SSH/rsync stderr is bounded in memory and mapped to fixed error
+messages; keys, argv and filenames are never emitted as remote diagnostics.
+
+Remote runs share the local execution lock, preserve local backup/checksum dates,
+and never acquire or power HAL3. Disabling L4 cancels and awaits the local SSH/rsync
+process group. Source identity is checked again immediately before transfer.
+Deletion planning, runtime deletion limits and free-space guards constrain normal
+mirror operation; the mirror is not append-only or immutable storage. A compromised
+source key can modify its authorized mirror area, so the independent offline L3
+remains important. The dedicated receiver uses unprivileged per-source accounts,
+forced upstream rrsync validation, disabled shell/forwarding and neutralized links.

@@ -95,3 +95,21 @@ Still required in an explicitly authorized pilot: Supervisor installation/schema
 - The Playwright browser suite covers JavaScript disabled, delayed first status with an existing backup, pending polling without overlapping periodic requests, connection loss with an open confirmation, malformed responses, reconnecting into busy state and out-of-order replies. It verifies zero mutation requests while state is unknown. The suite is now part of CI.
 - Existing manual backup/area/cancellation browser checks pass, as do official Home Assistant 2026.10.3 integration smoke (19 entities) and ARM64 image build.
 - Validation uses fake HTTP responses and temporary local files. No production service, backup cancellation, restart, app installation or disk/power action was performed.
+
+## 0.2.0 L4 — local validation, 2026-11-22
+
+- 192 isolated Steward unit tests pass, including L4 defaults, schema, pinned identities,
+  streaming plans beyond the output capture limit, subprocess error redaction/draining,
+  process cancellation, source UUIDs, safe deletion limits and disabling an active run.
+- Six receiver unit tests pass in the companion Mirror repository.
+- Four actual Chrome suites pass: existing connection safety, existing restore,
+  guided sender L4, and guided receiver. New screens were inspected at desktop and
+  mobile sizes using simulated data. No production webpage was controlled.
+- Actual OpenSSH/rsync container acceptance passes for key authentication, read-only
+  probe, dry-run without writes, first copy, changed files, deletions, path confinement,
+  refused shell/pull commands and rejected host-key mismatch. The mount UUID is mocked;
+  container tests do not prove HAOS mount identity visibility.
+- Both final apps build for amd64 and aarch64. Official Home Assistant 2026.10.3 smoke
+  passes with the unchanged 20 integration entities. Ruff and Git whitespace checks pass.
+- No installation, live mirror, HA service call, disk/power operation, router/proxy
+  change, commit or publication was performed. Manual HAOS acceptance remains pending.

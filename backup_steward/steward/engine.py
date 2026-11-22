@@ -32,7 +32,7 @@ class Engine:
 
     @property
     def busy(self):
-        return self.lock.locked() or bool(self.task and not self.task.done())
+        return self.lock.locked() or bool(self.task and not self.task.done()) or bool(getattr(self, "mirror", None) and self.mirror.probing)
 
     def start(self, mode="backup", scheduled_date=None, *, source=None):
         if self.busy:

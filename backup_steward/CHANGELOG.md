@@ -1,3 +1,11 @@
+## 0.2.0
+
+- Add optional L4 direct rsync/SSH mirror, disabled by default, with its own schedule and outcomes.
+- Guided setup, per-source Ed25519 keys, strict receiver key/UUID pinning, read-only connection test and progress.
+- Source UUID/empty-tree guards, deletion planning and limits, free-space checks and awaited cancellation.
+- L4 shares the local worker lock; it never powers or mounts HAL3 and cannot block its safe shutdown.
+- Desktop/mobile browser tests and isolated real SSH/rsync acceptance with the companion Mirror app.
+
 # 0.1.18 — Show the active backup step
 
 - Show “Em curso” on the current L1, L2, L3, retention or safe-shutdown card; future steps remain “A aguardar” and completed steps retain their results.

@@ -1,0 +1,116 @@
+/* Direct mirror setup. Public keys only; never render a private key. */
+(() => {
+  const el = id => document.getElementById(`l4-${id}`);
+  let policy, status, local, ready = false, pending = false;
+  const controls = ["enabled", "settings", "test", "run", "cancel", "save", "pair", "copy", "yes", "import-button"];
+  function lock() { ready = false; controls.forEach(id => el(id).disabled = true); }
+  function render() {
+    const idle = !local.busy && !local.state.needs_cleanup;
+    el("enabled").checked = policy.enabled;
+    el("enabled").disabled = !ready || (!idle && !status.busy);
+    el("settings").disabled = el("save").disabled = el("pair").disabled = !ready || !idle;
+    el("import-button").disabled = !ready || !idle;
+    el("test").disabled = !ready || !idle || !policy.sources.length || !policy.host_key || !policy.host;
+    el("run").disabled = el("yes").disabled = !ready || !idle || !policy.enabled || local.mode !== "production";
+    el("cancel").hidden = !status.busy;
+    el("cancel").disabled = !ready || !status.busy;
+    el("copy").disabled = !ready || !el("pairing").value;
+    el("destination").textContent = policy.host ? `${policy.label} · ${policy.host}:${policy.port}` : "Por configurar";
+    el("last").textContent = status.last_success ? new Date(status.last_success).toLocaleString("pt-PT", {timeZone:local.timezone}) : "Ainda sem envios";
+    el("progress").textContent = status.busy && status.speed ? `${status.source || ""} · ${status.percent || 0}% · ${status.speed}` : "—";
+    el("summary").textContent = !policy.enabled ? "L4 desativado. A cópia remota existente mantém-se." : status.message || "Espelho ativo. Testa a ligação antes do primeiro envio.";
+  }
+  async function refreshMirror() {
+    if (pending) return;
+    pending = true; lock();
+    try {
+      const [p, s] = await Promise.all([api("l4/config"), api("l4/status")]);
+      if (!statusReady || !current) throw Error("A aguardar estado local");
+      const l = current;
+      if (typeof s.busy !== "boolean" || typeof s.enabled !== "boolean" || typeof l.busy !== "boolean" || typeof l.state?.needs_cleanup !== "boolean" || !Array.isArray(p.sources)) throw Error("Estado incompleto");
+      policy = p; status = s; local = l; ready = true; render();
+    } catch { lock(); el("summary").textContent = "Ligação indisponível. As ações ficam bloqueadas até confirmar o estado."; }
+    finally { pending = false; }
+  }
+  async function action(name) {
+    if (!ready) return;
+    try { await api(`l4/${name}`, "POST", {}); await refreshMirror(); }
+    catch(e) { toast(e.message); await refreshMirror(); }
+  }
+  el("enabled").onchange = async () => {
+    if (!ready) return;
+    const next = {...policy, enabled: el("enabled").checked};
+    if (!next.enabled) next.schedule_enabled = false;
+    lock();
+    try { await api("l4/config", "PUT", next); }
+    catch(e) { toast(e.message); }
+    await refreshMirror();
+  };
+  el("settings").onclick = async () => {
+    if (!ready) return;
+    try {
+      const config = await api("config");
+      const form = el("form");
+      for (const [key, value] of Object.entries(policy)) {
+        const input = form.elements.namedItem(key);
+        if (!input) continue;
+        if (input.type === "checkbox") input.checked = value; else input.value = value;
+      }
+      el("sources").replaceChildren();
+      for (const path of [config.source_mount, ...config.additional_sources]) {
+        const saved = policy.sources.find(s => s.source === path);
+        const card = document.createElement("div"); card.className = "mirror-source"; card.dataset.path = path;
+        const label = document.createElement("label"); label.className = "check";
+        const check = document.createElement("input"); check.type = "checkbox"; check.checked = !!saved; check.className = "source-selected";
+        label.append(check, document.createTextNode(path)); card.append(label);
+        const grid = document.createElement("div"); grid.className = "form-grid";
+        for (const [name, title, value] of [["name", "Nome no recetor", saved?.name || path.split("/").pop().toLowerCase()], ["uuid", "UUID do filesystem", saved?.uuid || (path === config.source_mount ? config.source_uuid : "")]]) {
+          const field = document.createElement("label"); field.textContent = title;
+          const input = document.createElement("input"); input.dataset.field = name; input.value = value; field.append(input); grid.append(field);
+        }
+        const detect = document.createElement("button"); detect.type = "button"; detect.className = "secondary"; detect.textContent = "Detetar UUID";
+        detect.onclick = async () => {
+          if (!ready) return;
+          try {
+            const result = await api("l4/storage"); const found = result.sources.find(item => item.source === path);
+            if (!found) throw Error("Não foi possível confirmar um filesystem ext4 para esta origem. Confirma a montagem e o UUID manualmente.");
+            card.querySelector('[data-field="uuid"]').value = found.uuid;
+          } catch(e) { el("error").textContent = e.message; }
+        };
+        card.append(grid, detect); el("sources").append(card);
+      }
+      el("pairing").value = ""; el("pairing").hidden = el("copy").hidden = true; el("error").textContent = "";
+      el("dialog").showModal();
+    } catch(e) { toast(e.message); }
+  };
+  el("form").onsubmit = async event => {
+    event.preventDefault(); if (!ready) return;
+    const next = {...policy};
+    for (const input of event.target.elements) if (input.name) next[input.name] = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value.trim();
+    if (!next.enabled) next.schedule_enabled = false;
+    next.sources = [...el("sources").children].filter(card => card.querySelector(".source-selected").checked).map(card => ({source:card.dataset.path, name:card.querySelector('[data-field="name"]').value.trim(), uuid:card.querySelector('[data-field="uuid"]').value.trim()}));
+    try { await api("l4/config", "PUT", next); el("error").textContent = "Definições guardadas. Podes preparar as chaves e testar a ligação."; await refreshMirror(); }
+    catch(e) { el("error").textContent = e.message; }
+  };
+  el("import-button").onclick = () => {
+    try {
+      const data = JSON.parse(el("import").value);
+      if (data.protocol !== "steward-mirror-v1" || typeof data.host_key !== "string" || !Number.isInteger(data.port)) throw Error();
+      el("form").elements.destination_uuid.value = data.uuid || ""; el("form").elements.host_key.value = data.host_key; el("form").elements.port.value = data.port;
+      el("error").textContent = "Identidade preenchida. Confirma o endereço e guarda as definições.";
+    } catch { el("error").textContent = "Cola o JSON de identidade exportado pela app Mirror."; }
+  };
+  el("pair").onclick = async () => {
+    if (!ready) return;
+    try { el("pairing").value = JSON.stringify(await api("l4/pair", "POST", {}), null, 2); el("pairing").hidden = el("copy").hidden = false; render(); }
+    catch(e) { el("error").textContent = e.message; }
+  };
+  el("copy").onclick = async () => { try { await navigator.clipboard.writeText(el("pairing").value); toast("Emparelhamento público copiado."); } catch { el("pairing").select(); } };
+  el("close").onclick = () => el("dialog").close();
+  el("test").onclick = () => action("test");
+  el("cancel").onclick = () => action("cancel");
+  el("run").onclick = () => { if (ready && !el("run").disabled) el("confirm").showModal(); };
+  el("no").onclick = () => el("confirm").close();
+  el("yes").onclick = () => { if (ready && !el("yes").disabled) { el("confirm").close(); action("run"); } };
+  refreshMirror(); setInterval(refreshMirror, 5000);
+})();

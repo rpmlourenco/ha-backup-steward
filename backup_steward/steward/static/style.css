@@ -723,3 +723,18 @@ summary {
 .integrity-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
 .integrity-table th, .integrity-table td { text-align: left; padding: 10px 6px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .integrity-samples { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; padding-left: 18px; }
+
+/* Remote mirror setup shares the local app's colours and spacing. */
+.mirror-card { border-top: 3px solid var(--blue); }
+.mirror-switch { display: flex; flex-direction: row; align-items: center; gap: 10px; margin: 0; white-space: nowrap; }
+.mirror-switch input { appearance: none; position: relative; flex: 0 0 44px; width: 44px; height: 24px; padding: 0; border: 0; border-radius: 20px; background: var(--muted); cursor: pointer; }
+.mirror-switch input::before { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; background: white; border-radius: 50%; transition: transform .15s; }
+.mirror-switch input:checked { background: var(--blue); }
+.mirror-switch input:checked::before { transform: translateX(20px); }
+.mirror-facts { display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; margin: 24px 0; }
+.mirror-facts small, .mirror-facts strong { display: block; overflow-wrap: anywhere; }
+.mirror-facts small { color: var(--muted); margin-bottom: 7px; }
+.mirror-source { border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 12px; }
+.mirror-source .form-grid { margin-top: 12px; }
+#l4-dialog textarea { overflow-wrap: anywhere; }
+@media(max-width: 640px) { .mirror-facts { grid-template-columns: 1fr; gap: 16px; } .mirror-card .section-heading { align-items: flex-start; flex-direction: column; } }

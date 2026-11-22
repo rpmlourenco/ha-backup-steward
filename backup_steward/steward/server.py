@@ -144,10 +144,13 @@ def application(engine, ingress=False):
 
     app.router.add_post("/v1/destination", destination)
     if ingress:
+        from .l4 import routes as mirror_routes
+
+        mirror_routes(app, engine)
         # Content-addressed paths keep each document paired with its own UI assets.
         assets = {}
         html = (STATIC / "index.html").read_text(encoding="utf-8")
-        for name, content_type in (("app.js", "text/javascript"), ("style.css", "text/css")):
+        for name, content_type in (("app.js", "text/javascript"), ("l4.js", "text/javascript"), ("style.css", "text/css")):
             data = (STATIC / name).read_bytes()
             digest = hashlib.sha256(data).hexdigest()
             path = f"static/{digest}/{name}"
@@ -228,6 +231,12 @@ async def scheduler(engine):
                 engine.start("backup", day)
             except ValueError:
                 engine.state.event("schedule_blocked", "Scheduled operation could not start")
+        if (hasattr(engine, "mirror") and not engine.busy
+                and not engine.state.data.get("needs_cleanup") and engine.mirror.due(now)):
+            from zoneinfo import ZoneInfo
+
+            day = now.astimezone(ZoneInfo(engine.cfg["timezone"])).date().isoformat()
+            engine.mirror.start(day)
         await asyncio.sleep(30)
 
 

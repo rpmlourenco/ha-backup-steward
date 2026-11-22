@@ -6,8 +6,11 @@ import uuid
 from pathlib import PurePosixPath
 from zoneinfo import ZoneInfo
 
+from . import l4_policy
+
 
 DEFAULTS = {
+    "l4": l4_policy.DEFAULTS,
     "execution_mode": "observe",
     "schedule_enabled": False,
     "schedule_time": "04:00",
@@ -132,6 +135,7 @@ def validate(raw):
             raise ValueError("An encryption secret is required; unencrypted L2 is not supported")
     if cfg["schedule_enabled"] and cfg["execution_mode"] == "observe":
         raise ValueError("Observation mode cannot run a schedule")
+    cfg["l4"] = l4_policy.validate(cfg["l4"], [cfg["source_mount"]] + cfg["additional_sources"])
     return cfg
 
 

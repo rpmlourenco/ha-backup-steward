@@ -47,3 +47,11 @@ Use **Restaurar L3** to restore the current L3 mirror to all original areas or a
 Files are written in place (`rclone --inplace`), without a temporary full copy or history directory. Selected original content is deleted before copying. Cancellation or a write failure can leave a partial restore; the read-only L3 mirror is preserved so the restore can be repeated. Normal file-size validation is always performed; optional SHA-256 uses the existing global integrity error limit. Missing/empty mirrors, symbolic/hard links, special files and nested mounts block preparation.
 
 Restore shares the app lock, cancellation and safe disk shutdown. It does not create L2, apply retention, modify the backup summary, or advance backup/checksum schedules. Existing backup policies and keys remain unchanged. This restores the current L3 file mirror; L2 archives are restored directly through Home Assistant.
+
+## L4 · Espelho remoto
+
+Usa **Configurar espelho** no painel L4. A configuração é guiada, com deteção de UUID,
+chaves públicas por origem, importação da identidade do recetor e teste sem escrita.
+O interruptor **Ativar L4** começa desligado e é independente da agenda local.
+Desligá-lo interrompe envios e conserva os ficheiros remotos. L4 só envia em produção.
+Consulta `docs/L4-MIRROR.md` no repositório para preparar a app Mirror e a rede.

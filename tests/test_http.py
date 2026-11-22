@@ -353,7 +353,7 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
             patch.dict("os.environ", {"STEWARD_INGRESS_IP": "127.0.0.1"}),
         ):
             root = Path(temp)
-            for name in ("index.html", "app.js", "style.css"):
+            for name in ("index.html", "app.js", "l4.js", "style.css"):
                 (root / name).write_bytes((STATIC / name).read_bytes())
 
             async def document():

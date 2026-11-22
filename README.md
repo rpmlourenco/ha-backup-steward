@@ -4,7 +4,7 @@
 
 Encrypted Home Assistant backups, verified offline copies, and safe disk shutdown — packaged as one app with a lightweight companion integration.
 
-> **Experimental 0.1.18.** Local automated tests and container builds are not HAOS hardware acceptance. Keep known-good backups and the existing `80-local-media.rules` source automount during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
+> **Experimental 0.2.0.** Local automated tests and container builds are not HAOS hardware acceptance. Keep known-good backups and the existing `80-local-media.rules` source automount during the pilot. The app starts in **observation mode**, with its **schedule disabled**. Nothing is automatically installed on your Home Assistant.
 
 ![Backup Steward interface](docs/images/overview.png)
 
@@ -162,3 +162,19 @@ Rclone errors are relayed immediately with a bounded affected-file/reason report
 All operation controls are disabled in the initial HTML, before JavaScript or a status response arrives. Status reads keep controls locked until a structurally valid current response is available. Unavailable/malformed responses lock actions, including a confirmation dialog already open. Older out-of-order status responses cannot restore stale availability. A confirmed active backup keeps backup/verification/mount actions blocked and permits only the appropriate safe cancellation action.
 
 The isolated browser regression suite runs in CI using Playwright/Chromium: `python tests/ui_connection.py`. An installed Chromium-family browser can be selected with `STEWARD_TEST_BROWSER` for local checks. Tests use temporary loopback fixtures and simulated status/API responses, never a real HA instance.
+
+## L4 remote mirror
+
+Optional direct rsync over SSH to the companion **Data Steward Mirror** app. L4 and
+its daily schedule are disabled on upgrade. Open **Configurar espelho** to select
+configured sources, detect/confirm their filesystem UUIDs, prepare public pairing
+keys and import the receiver identity. No private key is returned to the browser.
+
+**Ativar L4** controls all remote sends. Turning it off cancels an active mirror
+worker and preserves the remote files. Manual sends require confirmation; deleted
+source files are deleted remotely within the configured limits. The remote mirror
+has no additional version history. It runs only in production, under the local
+worker lock, with separate progress/results and no HAL3 power/mount operations.
+
+See [the L4 setup and operating guide](docs/L4-MIRROR.md). Installation and network
+configuration are manual; repository development never starts a live transfer.

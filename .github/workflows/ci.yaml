@@ -52,3 +52,10 @@ jobs:
           fi
       - run: python tests/ui_connection.py
       - run: python tests/ui_restore.py
+      - run: python tests/ui_l4.py
+
+  arm-build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t ha-backup-steward:arm64 backup_steward
